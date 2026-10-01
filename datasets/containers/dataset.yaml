@@ -1,0 +1,7 @@
+names:
+- container
+- intermodal container
+path: .
+test: images/test
+train: images/train
+val: images/val

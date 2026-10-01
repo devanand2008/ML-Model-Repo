@@ -1,0 +1,6 @@
+names:
+- person
+path: .
+test: images/test
+train: images/train
+val: images/val

@@ -1,0 +1,35 @@
+services:
+  app:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://visionx:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/visionx
+      AUTH_ENABLED: "true"
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      APP_ENV: production
+    volumes:
+      - weights:/app/weights
+      - outputs:/app/outputs
+      - reports:/app/reports
+    depends_on:
+      db:
+        condition: service_healthy
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: visionx
+      POSTGRES_USER: visionx
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U visionx"]
+      interval: 5s
+      retries: 10
+volumes:
+  weights:
+  outputs:
+  reports:
+  database:
