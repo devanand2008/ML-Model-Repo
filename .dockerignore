@@ -17,3 +17,11 @@ logs
 reports
 *.pt
 *.pid
+data/forecasting
+data/synthetic
+data/demo_exports
+data/phone_tls
+deliverables
+data/sample_videos
+data/chrome-transitopt-qa
+data/chrome-transitopt-*-qa

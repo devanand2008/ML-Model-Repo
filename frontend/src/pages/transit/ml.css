@@ -1,0 +1,671 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   ML WORKSPACE & LANDING PAGE STYLING (TransitOpt & VisionX)
+   Dual Theme Architecture: Light & Dark Modes with High-End Aesthetics
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.ml-home {
+  min-height: 100vh;
+  background: var(--bg-app);
+  color: var(--text-main);
+  font-family: "Plus Jakarta Sans", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+.ml-home * {
+  box-sizing: border-box;
+}
+
+/* ── App Header ────────────────────────────────────────────────────── */
+.ml-app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 18px max(6vw, 24px);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-topbar);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: all 0.25s ease;
+}
+
+.ml-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  font-size: 16px;
+  color: var(--text-heading);
+  text-decoration: none;
+  transition: transform 0.2s ease;
+}
+
+.ml-logo:hover {
+  transform: scale(1.02);
+}
+
+.ml-logo svg,
+.ml-logo span {
+  color: var(--accent-primary);
+}
+
+.ml-app-header nav {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+}
+
+.ml-app-header nav a {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.18s ease;
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+
+.ml-app-header nav a:hover {
+  color: var(--accent-primary);
+  background: var(--accent-primary-bg);
+}
+
+/* ── Hero Section ──────────────────────────────────────────────────── */
+.ml-home-content {
+  max-width: 1320px;
+  padding: 56px 28px 32px;
+  margin: 0 auto;
+}
+
+.ml-hero {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 60px;
+  align-items: center;
+  margin-bottom: 56px;
+}
+
+.ml-eyebrow {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--accent-primary);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.ml-hero h1 {
+  font-size: clamp(34px, 4.4vw, 56px);
+  line-height: 1.15;
+  letter-spacing: -1.8px;
+  font-weight: 800;
+  color: var(--text-heading);
+  margin: 18px 0;
+}
+
+.ml-hero h1 em {
+  font-style: normal;
+  color: var(--accent-primary);
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.ml-hero p {
+  max-width: 540px;
+  color: var(--text-secondary);
+  line-height: 1.8;
+  font-size: 14.5px;
+}
+
+.ml-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 24px 0 16px;
+}
+
+.ml-primary,
+.ml-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 20px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 700;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ml-primary {
+  background: var(--gradient-primary);
+  color: #ffffff;
+  box-shadow: var(--shadow-glow);
+}
+
+.ml-primary:hover {
+  opacity: 0.95;
+  transform: translateY(-1px);
+  box-shadow: 0 0 24px var(--accent-glow);
+}
+
+.ml-secondary {
+  border: 1px solid var(--border-card);
+  color: var(--text-main);
+  background: var(--bg-surface-elevated);
+}
+
+.ml-secondary:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--border-focus);
+  transform: translateY(-1px);
+}
+
+.ml-hero small {
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+/* ── Interactive Flow Diagram ──────────────────────────────────────── */
+.ml-flow {
+  padding: 26px;
+  border: 1px solid var(--border-card);
+  border-radius: 18px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+  position: relative;
+  overflow: hidden;
+}
+
+.ml-flow > div {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  gap: 4px 14px;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-card);
+  padding: 18px;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+}
+
+.ml-flow > div:hover {
+  border-color: var(--border-focus);
+  transform: translateX(3px);
+}
+
+.ml-flow svg {
+  grid-row: span 2;
+  color: var(--accent-primary);
+  align-self: center;
+}
+
+.ml-flow strong {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-heading);
+}
+
+.ml-flow span {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.ml-flow i {
+  display: block;
+  width: 2px;
+  height: 22px;
+  background: var(--accent-primary);
+  margin: 0 38px;
+  opacity: 0.7;
+}
+
+/* ── Role Grid Cards ───────────────────────────────────────────────── */
+.ml-role-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 22px;
+  margin-bottom: 48px;
+}
+
+.ml-role-grid > a {
+  padding: 28px;
+  border: 1px solid var(--border-card);
+  background: var(--bg-card);
+  border-radius: 14px;
+  color: var(--text-main);
+  text-decoration: none;
+  box-shadow: var(--shadow-card);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+}
+
+.ml-role-grid > a:hover {
+  border-color: var(--border-focus);
+  background: var(--bg-card-hover);
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md), var(--shadow-glow);
+}
+
+.ml-role-grid svg {
+  color: var(--accent-primary);
+  width: 28px;
+  height: 28px;
+}
+
+.ml-role-grid h2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-heading);
+  margin: 18px 0 10px;
+}
+
+.ml-role-grid p {
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.7;
+  min-height: 64px;
+  margin: 0;
+}
+
+.ml-role-grid span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-primary);
+  margin-top: 22px;
+  transition: gap 0.2s ease;
+}
+
+.ml-role-grid > a:hover span {
+  gap: 12px;
+}
+
+/* ── Live Alerts Feed ──────────────────────────────────────────────── */
+.ml-feed {
+  margin-top: 48px;
+  padding: 28px;
+  border: 1px solid var(--border-card);
+  background: var(--bg-card);
+  border-radius: 14px;
+  box-shadow: var(--shadow-card);
+}
+
+.ml-section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.ml-section-heading h2 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-heading);
+  margin: 8px 0 0;
+}
+
+.ml-section-heading > span {
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+.ml-alert-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.ml-alert-grid article {
+  display: flex;
+  gap: 16px;
+  background: var(--bg-surface-elevated);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: var(--shadow-sm);
+}
+
+[data-theme="light"] .ml-alert-grid article {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.ml-alert-grid article > svg {
+  color: var(--accent-orange);
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+}
+
+.ml-alert-grid strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-heading);
+}
+
+.ml-alert-grid p {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: 6px 0 8px;
+}
+
+.ml-alert-grid small {
+  font-size: 10px;
+  color: var(--text-muted);
+  display: block;
+}
+
+.ml-alert-grid a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent-primary);
+  margin-top: 14px;
+  text-decoration: none;
+}
+
+.ml-empty {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 20px 0;
+  line-height: 1.8;
+}
+
+.ml-empty > svg {
+  color: var(--accent-primary);
+  flex: none;
+  width: 24px;
+  height: 24px;
+}
+
+.ml-empty small {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.ml-home footer {
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 36px 0 24px;
+  text-align: center;
+}
+
+/* ── Workspace Tabs & Prediction Info ──────────────────────────────── */
+.ml-use-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.ml-use-tabs button {
+  display: flex;
+  text-align: left;
+  align-items: center;
+  gap: 16px;
+  padding: 22px;
+  border-radius: 12px;
+  border: 1px solid var(--border-card);
+  background: var(--bg-surface-elevated);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ml-use-tabs button:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--border-card-hover);
+}
+
+.ml-use-tabs button.active {
+  border-color: var(--border-focus);
+  background: var(--accent-primary-bg);
+  color: var(--text-heading);
+  box-shadow: 0 0 16px var(--accent-glow);
+}
+
+.ml-use-tabs svg {
+  width: 28px;
+  height: 28px;
+  color: var(--accent-primary);
+  flex: none;
+}
+
+.ml-use-tabs strong {
+  display: block;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-heading);
+}
+
+.ml-use-tabs span {
+  display: block;
+  font-size: 11.5px;
+  margin-top: 5px;
+  color: var(--text-muted);
+}
+
+.ml-camera-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-top: 20px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.ml-steps {
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 2;
+}
+
+.ml-model-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.ml-model-info > svg {
+  color: var(--accent-primary);
+  width: 36px;
+  height: 36px;
+}
+
+.ml-model-info strong {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-heading);
+}
+
+.ml-model-info span,
+.ml-model-info small {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-top: 6px;
+  display: block;
+}
+
+.ml-prediction {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 20px;
+  margin-top: 24px;
+}
+
+.ml-prediction h3 {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-heading);
+  margin-bottom: 14px;
+}
+
+.ml-prediction > strong {
+  color: var(--accent-primary);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.ml-prediction p {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.8;
+  margin: 6px 0;
+}
+
+.ml-prediction small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.ml-output-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.ml-output-row > a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 16px;
+  border: 1px solid var(--border-card);
+  border-radius: 9px;
+  color: var(--text-main);
+  background: var(--bg-surface-elevated);
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.ml-output-row > a:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--border-focus);
+}
+
+/* ── Connect Device Page ───────────────────────────────────────────── */
+.ml-connect {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 40px 24px;
+}
+
+.ml-connect h1 {
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  color: var(--text-heading);
+  margin: 12px 0 20px;
+}
+
+.ml-connect p,
+.ml-connect li {
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  line-height: 1.9;
+}
+
+.ml-connect code {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-card);
+  border-radius: 5px;
+  padding: 3px 8px;
+  color: var(--accent-primary);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.ml-connect section {
+  margin: 28px 0;
+  padding: 26px;
+  border: 1px solid var(--border-card);
+  border-radius: 14px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+}
+
+.ml-connect h2 {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--text-heading);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 16px;
+}
+
+.ml-connect-status {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 16px 20px;
+  border-radius: 10px;
+  background: var(--accent-primary-bg);
+  border: 1px solid var(--border-focus);
+  color: var(--accent-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ml-connect-links {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+
+.ml-connect-links a {
+  color: var(--accent-primary);
+  font-weight: 600;
+  font-size: 12.5px;
+  text-decoration: none;
+}
+
+.ml-connect-links a:hover {
+  text-decoration: underline;
+}
+
+/* ── Responsive ────────────────────────────────────────────────────── */
+@media(max-width: 850px) {
+  .ml-hero { grid-template-columns: 1fr; gap: 36px; }
+  .ml-role-grid { grid-template-columns: 1fr; }
+  .ml-role-grid p { min-height: 0; }
+  .ml-app-header { flex-wrap: wrap; padding: 18px; }
+  .ml-app-header nav { gap: 14px; flex-wrap: wrap; }
+  .ml-home-content { padding: 36px 20px; }
+  .ml-alert-grid { grid-template-columns: 1fr; }
+  .ml-use-tabs { grid-template-columns: 1fr; }
+  .ml-section-heading { align-items: flex-start; flex-direction: column; }
+  .ml-hero h1 { letter-spacing: -1px; }
+}
+
+.ml-use-tabs { grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr)); }

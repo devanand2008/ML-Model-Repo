@@ -1,0 +1,11 @@
+.speed-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr)); gap:20px; }
+.speed-reading { display:flex; align-items:center; gap:12px; flex-wrap:wrap; color:var(--text-heading); margin:16px 0; }
+.speed-reading strong { font-size:30px; letter-spacing:-1px; }
+.speed-reading span { color:var(--text-secondary); font-size:12px; }
+.speed-evidence { padding:16px; border:1px solid var(--border-card); border-radius:12px; margin:16px 0; }
+.speed-evidence.slow { border-color:#f59e0b; background:#f59e0b12; }
+.speed-evidence p,.speed-instructions { line-height:1.8; font-size:14px; }
+.speed-actions { display:flex; flex-wrap:wrap; gap:12px; margin:16px 0; }
+.speed-gps { padding:16px; border:1px solid #38bdf855; border-radius:12px; margin:12px 0; }
+.speed-gps p { margin:12px 0; font-size:14px; }
+.speed-gps small { display:block; line-height:1.6; }

@@ -23,7 +23,7 @@ let authorization = '';
 export function setCredentials(username: string, password: string) {
   authorization='Basic '+btoa(String.fromCharCode(...new TextEncoder().encode(`${username}:${password}`)));
 }
-async function request(url: string, init: RequestInit = {}) {
+export async function request(url: string, init: RequestInit = {}) {
   const headers=new Headers(init.headers);
   if(authorization)headers.set('Authorization',authorization);
   return fetch(url,{...init,headers});

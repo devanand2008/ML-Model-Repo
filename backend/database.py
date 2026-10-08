@@ -170,59 +170,32 @@ async def seed_default_models():
             "clock","vase","scissors","teddy bear","hair drier","toothbrush"
         ]
 
-        defaults = [
-            AIModel(
-                name="General Object Detector (YOLOv8n COCO)",
-                model_type="general",
-                filename="yolov8n.pt",
-                description="Pretrained YOLOv8 nano on COCO 80-class dataset.",
-                version="8.0",
-                is_active=True,
-                is_default=True,
-                confidence_threshold=0.50,
-                class_names=json.dumps(coco_classes),
-                metrics=json.dumps({}),
-            ),
-            AIModel(
-                name="Human Detector (YOLOv8n COCO)",
-                model_type="human",
-                filename="yolov8n.pt",
-                description="Pretrained YOLOv8 nano — filters 'person' class. "
-                            "Replace with CrowdHuman-trained weights for better accuracy.",
-                version="8.0",
-                is_active=True,
-                is_default=True,
-                confidence_threshold=0.45,
-                class_names=json.dumps(["person"]),
-                metrics=json.dumps({"note": "Filtered COCO person class"}),
-            ),
-            AIModel(
-                name="Ship Detector (YOLOv8n COCO)",
-                model_type="ship",
-                filename="yolov8n.pt",
-                description="Pretrained YOLOv8 nano — filters 'boat' class. "
-                            "Replace with xView/SeaDronesSee-trained weights.",
-                version="8.0",
-                is_active=True,
-                is_default=True,
-                confidence_threshold=0.45,
-                class_names=json.dumps(["boat"]),
-                metrics=json.dumps({"note": "Filtered COCO boat class"}),
-            ),
-            AIModel(
-                name="Container Detector (YOLOv8n)",
-                model_type="container",
-                filename="yolov8n.pt",
-                description="Using general COCO model. "
-                            "Upload custom weights from Roboflow shipping-container dataset for accurate detection.",
-                version="8.0",
-                is_active=True,
-                is_default=True,
-                confidence_threshold=0.45,
-                class_names=json.dumps(coco_classes),
-                metrics=json.dumps({"note": "Replace with custom-trained weights"}),
-            ),
-        ]
+        known_assets = {"yolo26n.pt": ("YOLO26 nano", "26"),
+                        "yolov8n.pt": ("YOLOv8 nano", "8")}
+        labels = {"general":"General Object Detector", "human":"Human Detector",
+                  "ship":"Ship Detector", "container":"Container Detector"}
+        defaults = []
+        for kind in ("general", "human", "ship", "container"):
+            filename = getattr(settings, f"{kind}_model")
+            known = known_assets.get(filename)
+            classes = (["person"] if kind == "human" else ["boat"] if kind == "ship" else coco_classes) if known else []
+            if known:
+                architecture, version = known
+                description = f"Configured {architecture} COCO checkpoint. "
+                description += {"general":"Uses its supported 80 object classes.",
+                                "human":"Person detection filters the supported person class.",
+                                "ship":"COCO boat detections are a ship fallback; ship subtypes are unavailable.",
+                                "container":"COCO has no shipping-container class; container/condition results remain unavailable."}[kind]
+                name = f"{labels[kind]} ({architecture} COCO)"
+            else:
+                version = "configured"
+                name = f"{labels[kind]} (Configured weights)"
+                description = "Uses the existing checkpoint selected in configuration. Class names are discovered from the installed model; no classes or accuracy are assumed."
+            defaults.append(AIModel(name=name, model_type=kind, filename=filename,
+                description=description, version=version, is_active=True, is_default=True,
+                confidence_threshold=.50 if kind == "general" else .45,
+                class_names=json.dumps(classes), metrics=json.dumps({}),
+                dataset_info=json.dumps({"source":"configured_checkpoint","class_metadata":"known_asset" if known else "not_inspected"})))
 
         session.add_all(defaults)
         await session.commit()

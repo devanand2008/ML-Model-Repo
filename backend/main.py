@@ -22,6 +22,10 @@ from api.analyze import router as analyze_router
 from api.models import router as models_router
 from api.live import router as live_router
 from api.reports import router as reports_router
+from transit import models as transit_models
+from transit.service import initialize as initialize_transit
+from api.transit import router as transit_router
+from api.mobility import public as mobility_public_router, private as mobility_private_router
 
 
 # ── Rate Limiter ─────────────────────────────────────────────────────
@@ -36,18 +40,26 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("Production requires AUTH_ENABLED=true and a strong ADMIN_PASSWORD")
     await create_tables()
     await seed_default_models()
+    await initialize_transit()
     logger.info("Database ready.")
-    cleanup = asyncio.create_task(cleanup_outputs())
-    yield
-    cleanup.cancel()
-    logger.info("VisionX AI Analyzer shutting down.")
+    cleanup_stop = asyncio.Event()
+    cleanup = asyncio.create_task(cleanup_outputs(cleanup_stop))
+    try:
+        yield
+    finally:
+        # Finish an in-flight retention transaction before closing its event loop.
+        cleanup_stop.set()
+        await cleanup
+        from database import engine
+        await engine.dispose()
+        logger.info("VisionX AI Analyzer shutting down.")
 
 
 # ── App ───────────────────────────────────────────────────────────────
 app = FastAPI(
-    title="VisionX AI Analyzer",
-    description="AI-powered Computer Vision Platform — Ship, Container, Human, and General Detection",
-    version="1.0.0",
+    title="TransitOpt AI / VisionX",
+    description="Road traffic and bus crowd camera ML, passenger route intelligence, and transit planning",
+    version="2.1.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     lifespan=lifespan,
@@ -83,6 +95,11 @@ async def request_guard(request: Request, call_next):
 
 # ── Routes ────────────────────────────────────────────────────────────
 app.include_router(analyze_router, prefix="/api/analyze", tags=["Analysis"])
+app.include_router(mobility_public_router, prefix="/api")
+app.include_router(mobility_private_router, prefix="/api")
+from api.rag import router as rag_router
+app.include_router(rag_router,prefix='/api')
+app.include_router(transit_router, prefix="/api", tags=["TransitOpt AI"])
 app.include_router(models_router, prefix="/api",          tags=["Models & History"])
 app.include_router(live_router,    prefix="/api/analyze",  tags=["Live Camera"])
 app.include_router(reports_router, prefix="/api", tags=["Activity Reports"])
@@ -104,7 +121,7 @@ async def serve_output(filename: str, user=Depends(require_user)):
 async def health():
     return {
         "status":  "ok",
-        "version": "1.0.0",
+        "version": "2.1.0",
         "env":     settings.app_env,
     }
 
@@ -122,8 +139,9 @@ async def global_exception_handler(request: Request, exc: Exception):
 # ── Entry point ───────────────────────────────────────────────────────
 
 
-async def cleanup_outputs():
-    while True:
+async def cleanup_outputs(stop_event: asyncio.Event):
+    last_mobility_cleanup = 0.0
+    while not stop_event.is_set():
         for folder in (settings.output_dir, settings.upload_dir):
             for path in folder.rglob("*"):
                 if path.is_file() and path.name != ".gitkeep" and time.time() - path.stat().st_mtime > settings.output_ttl_seconds:
@@ -131,7 +149,27 @@ async def cleanup_outputs():
                         path.unlink()
                     except OSError:
                         pass
-        await asyncio.sleep(60)
+        if time.monotonic() - last_mobility_cleanup >= 3600:
+            from datetime import timedelta
+            from sqlalchemy import delete
+            from database import AsyncSessionLocal
+            from transit.mobility import utc_now
+            from transit.models import TransitBusLocation, TransitBusOccupancy, TransitNavigationRequest
+            now = utc_now()
+            try:
+                async with AsyncSessionLocal() as db:
+                    await db.execute(delete(TransitBusLocation).where(TransitBusLocation.timestamp < now - timedelta(days=7)))
+                    await db.execute(delete(TransitBusOccupancy).where(TransitBusOccupancy.timestamp < now - timedelta(days=30)))
+                    await db.execute(delete(TransitNavigationRequest).where(TransitNavigationRequest.timestamp < now - timedelta(days=1)))
+                    await db.commit()
+            except Exception:
+                logger.exception("Could not apply mobility retention; retrying next cycle")
+            else:
+                last_mobility_cleanup = time.monotonic()
+        try:
+            await asyncio.wait_for(stop_event.wait(),timeout=60)
+        except asyncio.TimeoutError:
+            pass
 
 @app.exception_handler(UnidentifiedImageError)
 @app.exception_handler(ValueError)
@@ -148,7 +186,14 @@ async def missing_model(request: Request, exc: FileNotFoundError):
 
 @app.get("/api/session")
 async def session(user=Depends(require_user)):
-    return {"username": user}
+    from database import AsyncSessionLocal
+    from transit.models import TransitAccount
+    role = 'admin'
+    if user not in {'local',settings.admin_username}:
+        async with AsyncSessionLocal() as db:
+            account=await db.get(TransitAccount,user)
+            role=account.role if account else 'unknown'
+    return {"username": user,"role":role}
 
 # Serve the production frontend, while leaving unknown API routes as 404.
 from config import BASE_DIR
@@ -157,8 +202,14 @@ if frontend_dist.exists():
     app.mount("/assets", StaticFiles(directory=frontend_dist / "assets"), name="assets")
     @app.get("/{page:path}")
     async def frontend(page: str):
-        if page.startswith("api/"):
+        if page == "api" or page.startswith("api/"):
             raise HTTPException(404, "API route not found")
+        public_root = frontend_dist.resolve()
+        public_file = (public_root / page).resolve()
+        if not public_file.is_relative_to(public_root):
+            raise HTTPException(404, "Public file not found")
+        if public_file.is_file():
+            return FileResponse(public_file)
         return FileResponse(frontend_dist / "index.html", headers={"Cache-Control": "no-store"})
 
 if __name__ == "__main__":

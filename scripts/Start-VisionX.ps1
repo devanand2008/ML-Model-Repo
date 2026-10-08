@@ -3,7 +3,8 @@ param(
     [ValidateSet('start', 'stop', 'status')]
     [string]$Action = 'start',
     [switch]$CheckOnly,
-    [switch]$NoBrowser
+    [switch]$NoBrowser,
+    [ValidateSet('/','/record-demo','/ml')][string]$OpenPath='/'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -12,6 +13,7 @@ Set-Location -LiteralPath $projectRoot
 $pythonPath = Join-Path $projectRoot '.venv\Scripts\python.exe'
 $frontendPath = Join-Path $projectRoot 'frontend'
 $appUrl = 'http://127.0.0.1:8000'
+$browserUrl = $appUrl + $OpenPath
 $ownedServer = $null
 $startedSuccessfully = $false
 $logDirectory = Join-Path $projectRoot 'logs'
@@ -48,12 +50,12 @@ function Test-VisionX {
     try {
         $schema = Invoke-RestMethod "$appUrl/openapi.json" -TimeoutSec 3
         $health = Invoke-RestMethod "$appUrl/api/health" -TimeoutSec 3
-        return $schema.info.title -eq 'VisionX AI Analyzer' -and $health.status -eq 'ok' -and $schema.paths.PSObject.Properties.Name -contains '/api/session'
+        return $schema.info.title -in @('VisionX AI Analyzer', 'TransitOpt AI', 'TransitOpt AI / VisionX') -and $health.status -eq 'ok' -and $schema.paths.PSObject.Properties.Name -contains '/api/session'
     } catch { return $false }
 }
 
 try {
-    Write-Host "`nVisionX AI Analyzer" -ForegroundColor Cyan
+    Write-Host "`nTransitOpt AI / VisionX" -ForegroundColor Cyan
     Write-Host "Project: $projectRoot"
     if ($Action -eq 'status') {
         if (Test-VisionX) {
@@ -110,10 +112,16 @@ try {
     }
 
     # Install only when the environment lacks one of the application's dependencies.
-    & $pythonPath -c 'import fastapi, uvicorn, multipart, ultralytics, cv2, numpy, PIL, torch, torchvision, lap, sqlalchemy, aiosqlite, asyncpg, pydantic_settings, dotenv, httpx, slowapi, loguru, yaml' 2>$null
+    & $pythonPath -c 'import fastapi, uvicorn, multipart, ultralytics, cv2, numpy, PIL, torch, torchvision, lap, sqlalchemy, aiosqlite, asyncpg, pydantic_settings, dotenv, httpx, slowapi, loguru, yaml, pandas, xgboost, sklearn, ortools, transformers, sentencepiece' 2>$null
     if ($LASTEXITCODE -ne 0) {
         Write-Host 'Installing Python dependencies. First setup can take several minutes...'
         Invoke-Checked -Program $pythonPath -Arguments @('-m', 'pip', 'install', '-r', 'requirements.txt')
+    }
+
+    if (-not (Test-Path -LiteralPath (Join-Path $projectRoot 'weights\route-rag\flan-t5-small\transitopt-model.json')) -or
+        -not (Test-Path -LiteralPath (Join-Path $projectRoot 'weights\route-rag\flan-t5-small\model.safetensors'))) {
+        Write-Host 'Preparing the local route RAG language model (one-time download)...'
+        Invoke-Checked -Program $pythonPath -Arguments @('scripts\prepare_route_rag.py')
     }
 
     Push-Location -LiteralPath $frontendPath
@@ -133,7 +141,7 @@ try {
     if (Test-VisionX) {
         Write-Host "VisionX is already running at $appUrl" -ForegroundColor Green
         Save-ServerPid
-        if (-not $NoBrowser) { Start-Process $appUrl }
+        if (-not $NoBrowser) { Start-Process $browserUrl }
         exit 0
     }
 
@@ -166,7 +174,7 @@ try {
     Write-Host "`nFull app ready: $appUrl" -ForegroundColor Green
     Write-Host 'The Python server serves both the web dashboard and the AI API.'
     Write-Host "Logs: $logDirectory"
-    if (-not $NoBrowser) { Start-Process $appUrl }
+    if (-not $NoBrowser) { Start-Process $browserUrl }
     Write-Host 'SERVER RUNNING. You can close this window; the server stays running.'
     Write-Host 'To stop it later: Run-VisionX.bat stop'
 } catch {

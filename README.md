@@ -1,4 +1,28 @@
-# VisionX AI Analyzer
+# TransitOpt AI 2.1 — Camera ML and Transit Operations
+
+Version 2.1 centers one shared app on **road traffic ML** and **bus crowd ML**. The public home links passengers, camera operators and admins. `/ml` selects the existing YOLO model and registered laptop/phone camera; `/admin` retains fleet planning. Passenger routes load when both endpoints are set and automatically switch to a better camera-ranked alternative on five-second checks. Selecting a route manually disables automatic switching. The map fits the selected path and offers an external Google Maps directions option. Unobserved roads remain explicitly unknown. A one-minute scene-pressure learner uses continuous live history and becomes active only after beating a purged chronological persistence baseline.
+
+Laptop: `Run-TransitOpt.bat start`. Phone on the same Wi-Fi: `Run-TransitOpt-Phone.bat start`, then manually trust the generated public CA certificate on your phone and open the printed HTTPS address. Weak demo admin credentials are replaced with a strong random password in `.env` before LAN access starts. See the [camera ML and phone setup guide](documentation/CAMERA_ML_GUIDE.md). Real traffic signal feeds and verified geographic locations must be supplied by the operator.
+
+**Predict Demand · Analyze Traffic · Optimize Routes · Improve Service**
+
+TransitOpt AI extends the original VisionX React/FastAPI application and reuses its existing YOLO human/object detectors. Version 2.0 adds a public Leaflet/OpenStreetMap road map, OSRM road routes, consent-based passenger GPS, registered bus GPS and camera associations, bus-visible crowding, driver controls and reviewable head-office safety incidents. It retains the connected Salem-inspired transit database, 90-day reproducible synthetic history, evaluated XGBoost forecasting, OR-Tools CP-SAT allocation, operator approvals and simulation-only activation. Original vision tools remain available under **VisionX tools**.
+
+Run `Run-TransitOpt.bat start` and open **http://127.0.0.1:8000**. The launcher builds the frontend and starts the persistent API; use `status` or `stop` for this project's server. The [TransitOpt 2.0 guide](documentation/TRANSITOPT_2_GUIDE.md) covers GPS, cameras, navigation, safety and the demo. The [original guide](documentation/TRANSITOPT_GUIDE.md) covers the demand and fleet workflow. The [project audit](documentation/PROJECT_AUDIT.md) records the original recovery archive.
+
+The fleet-planning schematic uses illustrative coordinates; the passenger map uses actual OpenStreetMap tiles and OSRM road geometry. Registered demo stops and road camera pins have explicitly approximate coordinates. Routes, historical boardings and scenarios are **synthetic demo data**; image/video inference is **real model detection**. People counts estimate visible crowds rather than ticketed ridership or whole-bus occupancy. No real bus services are activated.
+
+Verify with `.\.venv\Scripts\python.exe -m pytest backend/tests -q`, then `npm.cmd test` and `npm.cmd run build` in `frontend/`.
+
+For one-click startup use [Start-TransitOpt-All.bat](Start-TransitOpt-All.bat) or [Run-On-Web.bat](Run-On-Web.bat). [Record-Full-Demo.bat](Record-Full-Demo.bat) opens the guided full-app screen recorder with visible captions and SRT downloads. The [video and launcher guide](documentation/VIDEO_AND_LAUNCHERS.md) explains recording, MP4 conversion and the separately generated actual-results demonstration video.
+
+The [moving bus speed module](documentation/BUS_SPEED_GUIDE.md) at `/speed` combines forward-camera YOLO vehicle counts with bus GPS speed, sustained queue warnings and alternative-route monitoring. It adds speed/count inputs to the validated scene-pressure learner.
+
+Use [Check app readiness](http://127.0.0.1:8000/status) to inspect installed detection models, demand, optimizer, RAG and database services. The sidebar module search and three distinct camera-use choices make the main workflows easier to find. Forecast bins now use medians with separate inner regularization tuning; route switching requires a meaningful advantage.
+
+## Original VisionX capabilities and documentation
+
+The [Route RAG module](documentation/ROUTE_RAG_GUIDE.md) uses local TF-IDF retrieval and evidence-constrained FLAN-T5 generation to explain passenger road alternatives and bus-review constraints. On `/passenger`, click a start and destination to load available road paths as blue lines, then ask the embedded assistant. `/rag` shows the local model and operator advice workspace.
 
 A React/TypeScript dashboard and Python/FastAPI computer vision service using OpenCV and Ultralytics YOLO26. No generated or simulated detections are used. Pretrained weights download on first inference and are cached in `weights/`.
 
@@ -48,7 +72,9 @@ Image confidence filtering is immediate in the browser: inference requests the s
 
 Open **Live Webcam**, allow camera access, click **Start Camera**, then **Start Detection**. Choose All Objects, Human Detection, Ship Detection, Containers or Port Monitor. The pretrained live model is YOLO26 nano. Tracking is enabled by default with ByteTrack; IDs and movement paths persist within each session. Toggle tracking or change the mode to reset tracking state. Use Save Snapshot to download an annotated frame.
 
-Live webcam frames are sent through an authenticated WebSocket at up to 15 frames/second per session, with one frame in flight at a time. Actual speed depends on CPU/GPU performance; the dashboard reports measured inference FPS and latency. Up to two live sessions are admitted; each has its own YOLO instance/tracker. Start Detection obtains a single-use 30-second ticket through the authenticated HTTP API. Raw and annotated live frames stay in memory and are not added to history. Connections expire after one hour and close after 60 seconds without input.
+The live camera preview runs independently of inference and requests up to 60 camera FPS where the camera supports it. Detection defaults to **Fast** (320px inference); choose **Balanced** (416px) or **Detail** (640px) for smaller or more distant objects. Lower resolutions trade detection detail for speed. Changing only the speed preserves tracking IDs.
+
+Live webcam frames are sent as binary JPEGs through an authenticated WebSocket, with one frame in flight at a time. Detection coordinates, skeletons and movement paths are drawn over the native camera preview in the browser, avoiding a returned JPEG on every frame. The server admits up to 30 detection frames/second per session (`LIVE_MAX_FPS`, configurable from 1 to 60); actual speed depends on CPU/GPU performance. The dashboard distinguishes measured detection FPS, camera FPS, round-trip latency and model processing time. Legacy JSON/base64 frames and annotated-image responses remain supported. Up to two live sessions are admitted; each has its own YOLO instance/tracker. Start Detection obtains a single-use 30-second ticket through the authenticated HTTP API. Live frames stay in memory and are not added to history. Connections expire after one hour and close after 60 seconds without input.
 
 Port Monitor combines general detections with installed custom human/ship/container models. Container-only mode requires trained container weights. Port Monitor reports container count as unavailable when those weights are absent. No COCO object is treated as a container proxy. Camera capture requires localhost or HTTPS and browser permission.
 

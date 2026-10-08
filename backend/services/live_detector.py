@@ -12,12 +12,23 @@ from services.pose_activity import pose_observations, PoseActionEstimator
 from config import settings
 
 MAX_FRAME_BYTES = 2 * 1024 * 1024
+INFERENCE_SIZES = {320, 416, 640}
 
 def decode_frame(encoded):
-    if not isinstance(encoded, str) or len(encoded) > MAX_FRAME_BYTES * 4 // 3 + 100:
-        raise ValueError('Camera frame too large; use 640px capture width')
+    if isinstance(encoded, bytes):
+        if len(encoded) > MAX_FRAME_BYTES:
+            raise ValueError('Camera frame too large; use 640px capture width')
+        raw = encoded
+    elif isinstance(encoded, str):
+        if len(encoded) > MAX_FRAME_BYTES * 4 // 3 + 100:
+            raise ValueError('Camera frame too large; use 640px capture width')
+        try:
+            raw = base64.b64decode(encoded.split(',', 1)[-1], validate=True)
+        except Exception as exc:
+            raise ValueError('Invalid camera frame') from exc
+    else:
+        raise ValueError('Invalid camera frame')
     try:
-        raw = base64.b64decode(encoded.split(',', 1)[-1], validate=True)
         if len(raw) > MAX_FRAME_BYTES:
             raise ValueError()
         frame = load_image_bytes(raw)
@@ -71,13 +82,16 @@ class LiveDetector:
         if mode == 'port_monitor' and not self.container_supported:
             self.warnings.append('Container detection unavailable: install custom container weights in Model Center.')
 
-    def process(self, encoded, confidence):
+    def process(self, encoded, confidence, inference_size=640, annotated=True):
+        if type(inference_size) is not int or inference_size not in INFERENCE_SIZES:
+            raise ValueError('Invalid live inference size; choose 320, 416 or 640')
         frame = decode_frame(encoded)
         all_dets = []
         covered = {kind for kind,_,_,_ in self.models if kind != 'general'}
         self.frame_index += 1
         for model_index, (kind, model, filters, coco) in enumerate(self.models):
-            options = dict(conf=confidence, classes=filters, max_det=100, imgsz=640, verbose=False)
+            options = dict(conf=confidence, classes=filters, max_det=100,
+                           imgsz=inference_size, rect=True, verbose=False)
             result = (model.track(frame, persist=True, tracker='bytetrack.yaml', **options) if self.track else model.predict(frame, **options))[0]
             dets = _parse_boxes(result)
             poses = _parse_poses(result) if self.pose else []
@@ -107,26 +121,30 @@ class LiveDetector:
         for i,det in enumerate(all_dets):
             det['id'] = i
         counts = dict(Counter(d['class'] for d in all_dets))
-        annotated = draw_detections(frame, all_dets)
-        if self.pose:
-            annotated = draw_pose(annotated,[d['keypoints'] for d in all_dets if 'keypoints' in d])
+        annotated_image = draw_detections(frame, all_dets) if annotated else None
+        if annotated and self.pose:
+            annotated_image = draw_pose(annotated_image,[d['keypoints'] for d in all_dets if 'keypoints' in d])
             for det in all_dets:
                 labels = det.get('action_estimates',[]) + det.get('pose_observations',[])
                 if labels:
                     x,y,_,h = det['bbox']
                     for row,label in enumerate(labels):
                         label_y = min(frame.shape[0]-8,int(y+h)+18) - (len(labels)-1-row)*15
-                        cv2.putText(annotated,label,(max(0,int(x)),max(12,label_y)),cv2.FONT_HERSHEY_SIMPLEX,.4,(0,255,128),1,cv2.LINE_AA)
+                        cv2.putText(annotated_image,label,(max(0,int(x)),max(12,label_y)),cv2.FONT_HERSHEY_SIMPLEX,.4,(0,255,128),1,cv2.LINE_AA)
         visible_ids = {d.get('track_id') for d in all_dets}
+        trajectories = []
         for tid in list(self.paths):
             if self.frame_index-self.last_seen[tid] > 30:
                 del self.paths[tid]; del self.last_seen[tid]
             elif tid in visible_ids and len(self.paths[tid]) > 1:
-                cv2.polylines(annotated,[np.array(self.paths[tid],np.int32)],False,(255,200,0),2)
-        return dict(type='detection', annotated_frame=ndarray_to_base64(annotated), detections=all_dets,
+                trajectories.append({'track_id':tid,'points':list(self.paths[tid])})
+                if annotated:
+                    cv2.polylines(annotated_image,[np.array(self.paths[tid],np.int32)],False,(255,200,0),2)
+        response = dict(type='detection', detections=all_dets,
                     counts=counts, total_objects=len(all_dets), unique_count=len(self.unique_ids),
                     frame_width=frame.shape[1], frame_height=frame.shape[0], mode=self.mode,
                     warnings=self.warnings, tracking=self.track, pose_enabled=self.pose,
+                    inference_size=inference_size, trajectories=trajectories,
                     models=[Path(m.ckpt_path).name for _,m,_,_ in self.models],
                     port_summary=dict(people=counts.get('person',0),
                         ships=sum(1 for d in all_dets if d['source']=='ship' or normalized(d['class']) in {'boat','ship'}),
@@ -134,3 +152,6 @@ class LiveDetector:
                         containers=sum(v for k,v in counts.items() if normalized(k) in CONTAINER_CLASSES) if self.container_supported else None,
                         vehicles=sum(counts.get(k,0) for k in ('car','bus','truck','motorcycle')),
                         total=len(all_dets)) if self.mode=='port_monitor' else None)
+        if annotated:
+            response['annotated_frame'] = ndarray_to_base64(annotated_image)
+        return response

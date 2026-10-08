@@ -9,10 +9,17 @@ services:
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
       APP_ENV: production
+      GENERAL_MODEL: ${GENERAL_MODEL:-yolo26n.pt}
+      HUMAN_MODEL: ${HUMAN_MODEL:-yolo26n.pt}
+      SHIP_MODEL: ${SHIP_MODEL:-yolo26n.pt}
+      CONTAINER_MODEL: ${CONTAINER_MODEL:-yolo26n.pt}
+      TRANSIT_FORECAST_DIR: /app/data/forecasting
+      TRANSIT_DEMAND_DATASET: /app/data/synthetic/transit_demand.csv.gz
     volumes:
       - weights:/app/weights
       - outputs:/app/outputs
       - reports:/app/reports
+      - transit_data:/app/data
     depends_on:
       db:
         condition: service_healthy
@@ -33,3 +40,4 @@ volumes:
   outputs:
   reports:
   database:
+  transit_data:

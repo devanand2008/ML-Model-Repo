@@ -230,6 +230,63 @@ def test_live_stream_tracking_and_config(client):
         settings.auth_enabled=False
     assert len(client.get('/api/history').json()['items'])==before
 
+def test_live_binary_fast_frames_and_speed_changes(client, monkeypatch):
+    from ultralytics.utils import ASSETS
+    from services import live_detector
+    frame = cv2.resize(cv2.imread(str(ASSETS/'bus.jpg')), (320,416))
+    jpeg = cv2.imencode('.jpg',frame)[1].tobytes()
+
+    # Metadata-only clients must skip the expensive annotation/JPEG return path.
+    def unexpected_annotation(*args, **kwargs):
+        raise AssertionError('Fast live frames should not render or encode an image')
+    monkeypatch.setattr(live_detector, 'draw_detections', unexpected_annotation)
+    monkeypatch.setattr(live_detector, 'ndarray_to_base64', unexpected_annotation)
+    with client.websocket_connect('/api/analyze/live?mode=human&inference_size=320&annotated=false') as ws:
+        ready = ws.receive_json()
+        assert ready['type']=='ready' and ready['inference_size']==320
+        assert ready['max_fps']==settings.live_max_fps
+        ws.send_bytes(jpeg)
+        first = ws.receive_json()
+        assert first['type']=='detection' and first['counts']['person']>0
+        assert first['frame_width']==320 and first['frame_height']==416
+        assert first['inference_size']==320 and 'annotated_frame' not in first
+        assert all(len(d['keypoints'])==17 for d in first['detections'])
+        ids = {d['track_id'] for d in first['detections']}
+        ws.send_bytes(jpeg)
+        second = ws.receive_json()
+        assert {d['track_id'] for d in second['detections']}==ids
+        assert second['trajectories']
+        assert all(len(p['points'])>=2 for p in second['trajectories'])
+        ws.send_json({'type':'config','inference_size':416,'annotated':False,'config_id':7})
+        ack = ws.receive_json()
+        assert ack['type']=='config_ack' and ack['config_id']==7
+        assert ack['inference_size']==416 and ack['tracking'] is True and ack['pose_enabled'] is True
+        ws.send_bytes(jpeg)
+        balanced = ws.receive_json()
+        assert balanced['inference_size']==416 and 'annotated_frame' not in balanced
+        assert balanced['unique_count']>=first['unique_count']
+        assert any(len(p['points'])>=3 for p in balanced['trajectories'])
+        for invalid in (0, 8000, True, '320'):
+            ws.send_json({'type':'config','inference_size':invalid})
+            assert ws.receive_json()['recoverable'] is True
+        ws.send_bytes(b'broken jpeg')
+        assert ws.receive_json()['recoverable'] is True
+        ws.send_bytes(jpeg)
+        assert ws.receive_json()['type']=='detection'
+
+def test_live_binary_limits_and_invalid_size(client):
+    from starlette.websockets import WebSocketDisconnect
+    from services.live_detector import MAX_FRAME_BYTES
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect('/api/analyze/live?inference_size=4096'):
+            pass
+    with client.websocket_connect('/api/analyze/live?annotated=false') as ws:
+        assert ws.receive_json()['type']=='ready'
+        ws.send_bytes(b'x'*(MAX_FRAME_BYTES+1))
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_json()
+        assert exc.value.code==1009
+
 def test_ten_minute_activity_reports(monkeypatch,tmp_path):
     from datetime import datetime
     from services.activity_reports import ActivityReporter, IST

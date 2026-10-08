@@ -5,23 +5,39 @@ from collections import defaultdict, deque
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from config import settings
+from database import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
 
 basic = HTTPBasic(auto_error=False)
 attempts = defaultdict(deque)
 
-def require_user(credentials: HTTPBasicCredentials | None = Depends(basic)):
+async def require_user(credentials: HTTPBasicCredentials | None = Depends(basic),
+                       db: AsyncSession = Depends(get_db)):
     if not settings.auth_enabled:
         return "local"
-    if not credentials or not (
+    if credentials and (
         secrets.compare_digest(credentials.username.encode(), settings.admin_username.encode())
         and secrets.compare_digest(credentials.password.encode(), settings.admin_password.encode())
     ):
-        raise HTTPException(401, "Sign in required", headers={"WWW-Authenticate": "Basic"})
-    return credentials.username
+        return credentials.username
+    if credentials:
+        from transit.models import TransitAccount
+        from transit.accounts import valid_password
+        account = await db.get(TransitAccount, credentials.username)
+        if account and account.active and account.role in {"admin", "head_office"} and valid_password(credentials.password, account.password_hash):
+            return account.username
+    raise HTTPException(401, "Sign in required", headers={"WWW-Authenticate": "Basic"})
 
-def require_admin(credentials: HTTPBasicCredentials | None = Depends(basic)):
-    # Local development is a trusted single-operator installation.
-    return require_user(credentials)
+async def require_admin(credentials: HTTPBasicCredentials | None = Depends(basic),
+                        db: AsyncSession = Depends(get_db)):
+    username = await require_user(credentials, db)
+    if username == "local" or username == settings.admin_username:
+        return username
+    from transit.models import TransitAccount
+    account = await db.get(TransitAccount, username)
+    if not account or account.role != "admin":
+        raise HTTPException(403, "Administrator access required")
+    return username
 
 def inference_limit(request: Request, user=Depends(require_user)):
     key = (request.client.host if request.client else "local", user)

@@ -1,0 +1,56 @@
+[
+  {
+    "id": "policy-routing",
+    "title": "How road alternatives are chosen",
+    "url": "/passenger",
+    "text": "OSRM returns available drivable road paths between the selected start and destination. Avoid observed traffic ranks current camera pressure first, with road-profile time breaking ties. The map displays available alternatives as blue lines. Traffic on roads without fresh observations is unknown; no traffic-free route is guaranteed."
+  },
+  {
+    "id": "policy-switch",
+    "title": "Passenger automatic route switching",
+    "url": "/passenger",
+    "text": "Passenger route monitoring checks available paths every five seconds. Automatic routing can select a better ranked alternative when new live traffic is reported. Clicking a route manually disables automatic switching. Selecting a passenger route changes only that journey."
+  },
+  {
+    "id": "policy-bus",
+    "title": "Bus diversion needs operator review",
+    "url": "/recommendations",
+    "text": "A road alternative is an advisory for a bus, not an authorized service diversion. A bus operator must check required stops, accessibility, bus road restrictions and service direction before approving a change. The RAG assistant cannot approve, activate or dispatch a bus route. Existing fleet recommendations require operator review and activation remains simulation-only."
+  },
+  {
+    "id": "policy-speed",
+    "title": "Bus GPS speed and possible queues",
+    "url": "/speed",
+    "text": "A moving bus camera counts visible vehicles using YOLO. The same bus GPS supplies speed in km/h. A possible queue requires speed at most 10 km/h, at least three visible vehicles, eight continuous seconds and multiple accurate GPS fixes. A signal or bus stop can also cause slow movement. Simulated or stale GPS cannot publish this live warning."
+  },
+  {
+    "id": "policy-forecast",
+    "title": "Validated traffic prediction",
+    "url": "/ml",
+    "text": "The one-minute Ridge model uses continuous live scene pressure, vehicle count and available bus GPS speed. Ten minutes of history and a purged chronological holdout are required. Predictions affect routing only after improving persistence MAE by at least five percent. Moving-bus learning uses observations within 100 metres of the latest location. This does not predict calibrated travel time. Median time bins reduce single-frame spikes. Ridge regularization is selected on a separate inner chronological validation split."
+  },
+  {
+    "id": "policy-recorded",
+    "title": "Recorded samples and missing evidence",
+    "url": "/cctv",
+    "text": "Recorded image and video analysis demonstrates actual model inference but does not publish live traffic alerts. Recorded traffic affects comparisons only when the recorded-demo option is explicitly enabled. Missing camera coverage means unknown traffic, never a confirmed clear road."
+  },
+  {
+    "id": "policy-map",
+    "title": "Choose two map points",
+    "url": "/passenger",
+    "text": "Click one point on the passenger map to choose the start. Click another point to choose the destination. Road routes load automatically. Click a blue line or route card to select an alternative. Use Pick origin or Pick destination to edit an endpoint, or New map journey to start again."
+  },
+  {
+    "id": "policy-eta",
+    "title": "Travel-time estimates",
+    "url": "/passenger",
+    "text": "Road-profile minutes come from the road routing provider. Camera comparison minutes add scene-pressure preference weights and are not measured traffic delay or live arrival times. Google Maps calculates its own directions when you open the external navigation link."
+  },
+  {
+    "id": "policy-crowd",
+    "title": "Interior crowding is separate",
+    "url": "/fleet",
+    "text": "A bus interior camera uses person detection to estimate visible crowding. Partial camera coverage does not prove total occupancy or ticketed ridership. Interior crowd counts do not replace road traffic evidence. Passenger answers use aggregate information and do not expose private camera footage or safety evidence."
+  }
+]

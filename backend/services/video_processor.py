@@ -7,9 +7,14 @@ from models.registry import resolve_model_path
 from services.image_processor import draw_detections
 
 def process_video(input_path, output_path, model_filename, conf=.5, iou=.45,
-                  class_filter=None, track=True, frame_skip=1, progress_callback=None):
+                  class_filter=None, track=True, frame_skip=1, progress_callback=None, frame_callback=None, person_only=False):
     from ultralytics import YOLO
     model = YOLO(resolve_model_path(model_filename))
+    names = model.names if isinstance(model.names,dict) else dict(enumerate(model.names))
+    if person_only:
+        class_filter = [key for key,name in names.items() if str(name).lower().strip() in {'person','human','people'}]
+        if not class_filter:
+            raise ValueError('The configured human model does not expose a supported person class')
     cap = cv2.VideoCapture(input_path)
     writer = None
     start = time.perf_counter()
@@ -55,6 +60,10 @@ def process_video(input_path, output_path, model_filename, conf=.5, iou=.45,
             writer.write(annotated)
             processed += 1
             timeline.append({'frame': processed, 'seconds': round(processed/fps,3), 'counts': dict(Counter(d['class'] for d in dets)), 'visible': len(dets)})
+            if frame_callback:
+                roi_people = frame_callback(processed, max(total,processed), dets, width, height)
+                if roi_people is not None:
+                    timeline[-1]['roi_people'] = roi_people
             if progress_callback:
                 progress_callback(processed, max(total, processed))
         if not processed:
@@ -65,7 +74,8 @@ def process_video(input_path, output_path, model_filename, conf=.5, iou=.45,
                     class_counts=dict(counts),total_detections=sum(counts.values()),
                     unique_track_ids=sorted(unique),unique_count=len(unique),timeline=timeline,
                     movement_pixels={str(k): round(v,2) for k,v in distances.items()},
-                    detections=dets,counts=timeline[-1]['counts'])
+                    detections=dets,counts=timeline[-1]['counts'],
+                    supported_classes=[names[key] for key in class_filter] if class_filter else list(names.values()))
     finally:
         cap.release()
         if writer:

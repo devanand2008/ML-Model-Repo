@@ -14,7 +14,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 class Settings(BaseSettings):
     # Application
     app_env: str = Field("development", validation_alias="APP_ENV")
-    app_host: str = Field("0.0.0.0", validation_alias="APP_HOST")
+    app_host: str = Field("127.0.0.1", validation_alias="APP_HOST")
     app_port: int = Field(8000, validation_alias="APP_PORT")
     secret_key: str = Field("change-me", validation_alias="SECRET_KEY")
     debug: bool = Field(False, validation_alias="VISIONX_DEBUG")
@@ -40,6 +40,8 @@ class Settings(BaseSettings):
 
     pose_model: str = "yolo26n-pose.pt"
     inference_timeout: int = 120
+    live_max_fps: int = Field(30, ge=1, le=60, validation_alias="LIVE_MAX_FPS")
+    osrm_base_url: str = Field("https://router.project-osrm.org", validation_alias="OSRM_BASE_URL")
     output_ttl_seconds: int = 3600
     report_dir: Path = BASE_DIR / 'reports'
 
@@ -65,7 +67,7 @@ class Settings(BaseSettings):
         return v
 
     # Auth
-    auth_enabled: bool = Field(False, validation_alias="AUTH_ENABLED")
+    auth_enabled: bool = Field(True, validation_alias="AUTH_ENABLED")
     admin_username: str = Field("admin", validation_alias="ADMIN_USERNAME")
     admin_password: str = Field("changeme", validation_alias="ADMIN_PASSWORD")
 
