@@ -2,6 +2,10 @@
 
 The default `render.yaml` uses Render's **free** plan and `Dockerfile.gateway`. Only the React website and a small streaming gateway run there. YOLO, local route RAG, XGBoost, traffic learning, optimization, camera analysis and the database run on the existing laptop server. There is no paid disk or paid compute in this setup.
 
+Live website: **https://transitopt-free.onrender.com**. Render dashboard: https://dashboard.render.com/web/srv-db4499jbc2fs73aifsd0.
+
+Verified October 9, 2026: the service is on the `free` plan; its Linux gateway passed a 0.1 CPU / 512 MB check using about 41 MB. Ten gateway/phone regression tests and the frontend build passed. The actual public URL passed admin authentication, YOLO image inference, general and person-only camera WebSocket inference, a 30-minute XGBoost forecast, an `OPTIMAL` draft optimizer result and local neural route RAG generation. OSRM returned a valid road route and its monitoring request passed; this selected test pair returned one alternative, so multiple alternatives depend on the provider and endpoints. Camera tests used a recorded stock validation image. Physical webcam, phone-camera and GPS permissions were not exercised automatically. No plan was approved or activated.
+
 ## Run or reconnect
 
 1. On the configured laptop, double-click **Start-Free-Hosting.bat**. Leave that window open and keep the laptop awake and connected to the internet.
