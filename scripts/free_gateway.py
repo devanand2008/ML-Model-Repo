@@ -2,6 +2,7 @@
 import asyncio
 import anyio
 import base64
+import json
 import os
 import posixpath
 import secrets
@@ -61,6 +62,8 @@ def create_app(*, target=None, token=None, bridge=None, static_dir=None, public_
             yield
 
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+    app.state.target = target
+    app.state.connection_lock = asyncio.Lock()
 
     def allowed(request):
         if bridge:
@@ -70,9 +73,9 @@ def create_app(*, target=None, token=None, bridge=None, static_dir=None, public_
         # Render's TLS terminates before the container; only its configured public origin is trusted.
         return not origin or origin == expected
 
-    def headers(request):
+    def headers(request, upstream_target=None):
         result = {k: v for k, v in request.headers.items() if k.lower() not in HOP and k.lower() != 'origin'}
-        result['origin'] = target
+        result['origin'] = upstream_target or app.state.target
         if not bridge:
             result['x-transitopt-bridge'] = token
             if public_admin:
@@ -83,12 +86,39 @@ def create_app(*, target=None, token=None, bridge=None, static_dir=None, public_
     async def health():
         return {'status': 'ok', 'hosting': 'laptop-bridge' if bridge else 'free-hybrid'}
 
+    @app.put('/gateway/connection')
+    async def update_connection(request: Request):
+        # Only the laptop holding the private bridge token can replace the upstream.
+        if bridge or not allowed(request) or not secrets.compare_digest(
+                request.headers.get('x-transitopt-bridge', '').encode(), token.encode()):
+            return JSONResponse({'detail': 'Forbidden'}, status_code=403)
+        body = bytearray()
+        async for chunk in request.stream():
+            body.extend(chunk)
+            if len(body) > 1024:
+                return JSONResponse({'detail': 'Invalid connection update'}, status_code=400)
+        try:
+            payload = json.loads(body)
+            candidate = validated_target(payload['target'], False)
+        except (ValueError, KeyError, TypeError, AttributeError):
+            return JSONResponse({'detail': 'Invalid connection target'}, status_code=400)
+        async with app.state.connection_lock:
+            try:
+                result = await app.state.client.get(candidate + '/api/health',
+                    headers={'x-transitopt-bridge': token}, timeout=10)
+                if result.status_code != 200 or result.json().get('status') != 'ok':
+                    raise ValueError('Unhealthy target')
+            except (httpx.HTTPError, ValueError, AttributeError):
+                return JSONResponse({'detail': 'Replacement connection is not ready'}, status_code=503)
+            app.state.target = candidate
+        return JSONResponse({'status': 'connected', 'ml_online': True}, headers={'Cache-Control': 'no-store'})
+
     @app.get('/gateway/status')
     async def status(request: Request):
         if bridge or not allowed(request):
             return JSONResponse({'detail': 'Forbidden'}, status_code=403)
         try:
-            response = await app.state.client.get(target + '/api/health', headers={'x-transitopt-bridge': token}, timeout=10)
+            response = await app.state.client.get(app.state.target + '/api/health', headers={'x-transitopt-bridge': token}, timeout=10)
             online = response.status_code == 200 and response.json().get('status') == 'ok'
         except (httpx.HTTPError, ValueError):
             online = False
@@ -129,8 +159,9 @@ def create_app(*, target=None, token=None, bridge=None, static_dir=None, public_
                     raise ValueError('Upload too large')
                 yield chunk
         try:
-            url = httpx.URL(target + '/' + path, query=request.url.query.encode())
-            upstream = app.state.client.build_request(request.method, url, headers=headers(request), content=body())
+            upstream_target = app.state.target
+            url = httpx.URL(upstream_target + '/' + path, query=request.url.query.encode())
+            upstream = app.state.client.build_request(request.method, url, headers=headers(request, upstream_target), content=body())
             reply = await app.state.client.send(upstream, stream=True)
         except ValueError:
             return JSONResponse({'detail': 'Upload too large'}, status_code=413)
@@ -146,12 +177,13 @@ def create_app(*, target=None, token=None, bridge=None, static_dir=None, public_
             return
         tasks = []
         try:
-            address = target.replace('https:', 'wss:').replace('http:', 'ws:') + '/api/analyze/live?' + socket.url.query
-            forwarded = headers(socket)
+            upstream_target = app.state.target
+            address = upstream_target.replace('https:', 'wss:').replace('http:', 'ws:') + '/api/analyze/live?' + socket.url.query
+            forwarded = headers(socket, upstream_target)
             forwarded.pop('origin', None)
             # Upstream negotiates its own WebSocket headers.
             forwarded = {k: v for k, v in forwarded.items() if not k.lower().startswith('sec-websocket-')}
-            async with connect(address, origin=target, additional_headers=forwarded, proxy=None,
+            async with connect(address, origin=upstream_target, additional_headers=forwarded, proxy=None,
                 max_size=8*1024*1024, max_queue=2, compression=None, open_timeout=20) as upstream:
                 await socket.accept()
                 async def to_backend():

@@ -78,6 +78,80 @@ def test_cloud_reports_disconnected_laptop_and_still_serves_website(monkeypatch,
         asyncio.run(upstream.aclose())
 
 
+def test_live_connection_updates_require_private_token_and_safe_target(monkeypatch, tmp_path):
+    app = make(monkeypatch, tmp_path)
+    with TestClient(app, base_url=HOST) as client:
+        body = {'target': 'https://next.trycloudflare.com'}
+        assert client.put('/gateway/connection', json=body).status_code == 403
+        assert client.put('/gateway/connection', json=body, headers={'X-TransitOpt-Bridge': 'wrong'}).status_code == 403
+        headers = {'X-TransitOpt-Bridge': TOKEN}
+        assert client.put('/gateway/connection', json=body, headers={**headers, 'Origin': 'https://evil.com'}).status_code == 403
+        for target in ['http://127.0.0.1:8000', 'https://evil.com', 'https://next.trycloudflare.com/path']:
+            assert client.put('/gateway/connection', json={'target': target}, headers=headers).status_code == 400
+        assert client.put('/gateway/connection', content=b'x' * 1025, headers=headers).status_code == 400
+        assert client.put('/gateway/connection', json=[], headers=headers).status_code == 400
+        assert app.state.target == 'https://demo.trycloudflare.com'
+    with TestClient(make(monkeypatch, tmp_path, True)) as client:
+        assert client.put('/gateway/connection', json=body, headers=headers).status_code == 403
+
+
+def test_unhealthy_replacement_preserves_the_working_connection(monkeypatch, tmp_path):
+    app = make(monkeypatch, tmp_path)
+    def unhealthy(request):
+        return httpx.Response(530, json={'status': 'disconnected'})
+    with TestClient(app, base_url=HOST) as client:
+        original = app.state.client
+        upstream = httpx.AsyncClient(transport=httpx.MockTransport(unhealthy))
+        app.state.client = upstream
+        response = client.put('/gateway/connection', json={'target': 'https://next.trycloudflare.com'},
+            headers={'X-TransitOpt-Bridge': TOKEN})
+        assert response.status_code == 503
+        assert app.state.target == 'https://demo.trycloudflare.com'
+        app.state.client = original
+        asyncio.run(upstream.aclose())
+
+
+def test_live_handoff_updates_health_api_and_camera_targets_without_restart(monkeypatch, tmp_path):
+    app = make(monkeypatch, tmp_path)
+    target = 'https://next.trycloudflare.com'
+    class Bytes(httpx.AsyncByteStream):
+        async def __aiter__(self): yield b'{"status":"ok"}'
+    def upstream_request(request):
+        assert str(request.url).startswith(target)
+        assert request.headers['x-transitopt-bridge'] == TOKEN
+        if request.url.path != '/api/health':
+            assert request.headers['origin'] == target
+            assert request.headers['authorization'] == 'Basic driver-credentials'
+            return httpx.Response(200, stream=Bytes(), headers={'content-type': 'application/json'})
+        return httpx.Response(200, json={'status': 'ok'})
+    class Camera:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def send(self, message): pass
+        def __aiter__(self): return self
+        async def __anext__(self):
+            await asyncio.sleep(0.01)
+            return '{"type":"ready"}'
+    def camera_connect(url, **kwargs):
+        assert url.startswith(target.replace('https:', 'wss:'))
+        assert kwargs['origin'] == target
+        return Camera()
+    monkeypatch.setattr(free_gateway, 'connect', camera_connect)
+    with TestClient(app, base_url=HOST) as client:
+        original = app.state.client
+        upstream = httpx.AsyncClient(transport=httpx.MockTransport(upstream_request))
+        app.state.client = upstream
+        response = client.put('/gateway/connection', json={'target': target}, headers={'X-TransitOpt-Bridge': TOKEN})
+        assert response.json() == {'status': 'connected', 'ml_online': True}
+        assert target not in response.text and TOKEN not in response.text
+        assert client.get('/gateway/status').json()['ml_online'] is True
+        assert client.get('/api/session', headers={'Authorization': 'Basic driver-credentials'}).status_code == 200
+        with client.websocket_connect('/api/analyze/live?ticket=sample', headers={'Origin': HOST}) as socket:
+            assert socket.receive_json()['type'] == 'ready'
+        app.state.client = original
+        asyncio.run(upstream.aclose())
+
+
 def test_websocket_preserves_binary_frames_and_rejects_foreign_origin(monkeypatch, tmp_path):
     received = []
     class Stream:

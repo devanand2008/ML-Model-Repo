@@ -12,6 +12,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / '.tools'
@@ -82,6 +83,20 @@ def upstream_admin_authorization():
     if not username or len(password) < 12:
         raise RuntimeError('Public admin requires the strong laptop administrator credential')
     return 'Basic ' + base64.b64encode(f'{username}:{password}'.encode('utf-8')).decode('ascii')
+
+
+def publish_connection(config, tunnel_url):
+    """Update the running gateway without a Render build or account API token."""
+    public_url = config['public_url'].rstrip('/')
+    parsed = urlsplit(public_url)
+    if (parsed.scheme != 'https' or not parsed.hostname or not parsed.hostname.endswith('.onrender.com')
+            or parsed.username or parsed.password or parsed.port not in (None, 443)
+            or parsed.path or parsed.query or parsed.fragment):
+        raise RuntimeError('Connection updates require the configured HTTPS Render website')
+    result = request(public_url + '/gateway/connection', {'target': tunnel_url}, 'PUT',
+        {'X-TransitOpt-Bridge': config['bridge_token']}, timeout=25)
+    if result.get('status') != 'connected' or not result.get('ml_online'):
+        raise RuntimeError('The cloud gateway did not confirm the ML connection')
 
 
 def install_cloudflared():
@@ -177,8 +192,9 @@ def supervise():
             config['tunnel_url'] = url
             save_config(config)
             print('Secure laptop connection ready. Website:', config.get('public_url', 'deployment pending'), flush=True)
-            connected_service = None
-            last_attempt = 0
+            last_attempt = -60
+            last_persist_attempt = -300
+            published_url = None
             last_ready = time.monotonic()
             last_ml_check = time.monotonic()
             while not STOP.exists() and tunnel.poll() is None:
@@ -197,25 +213,29 @@ def supervise():
                         print('Local ML needs attention; see the server logs.', flush=True)
                 config = read_config()
                 service_id = config.get('service_id')
-                if service_id and connected_service != service_id and time.monotonic() - last_attempt > 60:
+                if config.get('public_url') and time.monotonic() - last_attempt >= 60:
                     last_attempt = time.monotonic()
+                    try:
+                        publish_connection(config, url)
+                        if published_url != url:
+                            print('Public ML connected; no website rebuild was needed.', flush=True)
+                            published_url = url
+                    except (OSError, ValueError, KeyError, RuntimeError):
+                        print('Public connection update failed; retrying automatically in 60 seconds.', flush=True)
+                # Save a fallback for future Render restarts. Runtime handoffs never need a deployment.
+                if (service_id and published_url == url and config.get('deployed_tunnel_url') != url
+                        and time.monotonic() - last_persist_attempt >= 300):
+                    last_persist_attempt = time.monotonic()
                     try:
                         service = render_request('/services/' + service_id)
                         if service['serviceDetails']['plan'] != 'free':
                             raise RuntimeError('Refusing to modify a paid service')
-                        if config.get('deployed_tunnel_url') != url:
-                            if config.get('public_admin'):
-                                render_request('/services/' + service_id + '/env-vars/UPSTREAM_ADMIN_AUTHORIZATION',
-                                    {'value': upstream_admin_authorization()}, 'PUT')
-                                render_request('/services/' + service_id + '/env-vars/PUBLIC_ADMIN_ENABLED', {'value': 'true'}, 'PUT')
-                            render_request('/services/' + service_id + '/env-vars/TUNNEL_URL', {'value': url}, 'PUT')
-                            render_request('/services/' + service_id + '/deploys', {'clearCache': 'do_not_clear'}, 'POST')
-                            config['deployed_tunnel_url'] = url
-                            save_config(config)
-                            print('Render is reconnecting to the new laptop tunnel.', flush=True)
-                        connected_service = service_id
+                        render_request('/services/' + service_id + '/env-vars/TUNNEL_URL', {'value': url}, 'PUT')
+                        current = read_config()
+                        current['deployed_tunnel_url'] = url
+                        save_config(current)
                     except (OSError, ValueError, KeyError, RuntimeError):
-                        print('Render reconnection needs attention. Check Render CLI login and run the launcher again.', flush=True)
+                        print('Live handoff succeeded; saving the restart fallback will be retried.', flush=True)
                 time.sleep(5)
             if tunnel.poll() is None:
                 tunnel.terminate()

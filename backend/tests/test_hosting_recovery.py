@@ -45,3 +45,19 @@ def test_safe_connection_checks_retry_but_deploy_posts_are_not_replayed(monkeypa
     with pytest.raises(urllib.error.URLError):
         hosting.request('https://test.example/deploys', {}, 'POST')
     assert calls == ['POST']
+
+
+def test_live_handoff_uses_private_bridge_token_without_render_account_access(monkeypatch):
+    calls = []
+    def capture(url, data, method, headers, timeout):
+        calls.append((url, data, method, headers))
+        return {'status': 'connected', 'ml_online': True}
+    monkeypatch.setattr(hosting, 'request', capture)
+    config = {'public_url': 'https://demo.onrender.com', 'bridge_token': 'private-connection-token'}
+    hosting.publish_connection(config, 'https://new.trycloudflare.com')
+    assert calls == [('https://demo.onrender.com/gateway/connection', {'target': 'https://new.trycloudflare.com'},
+        'PUT', {'X-TransitOpt-Bridge': 'private-connection-token'})]
+    config['public_url'] = 'https://evil.example'
+    with pytest.raises(RuntimeError, match='configured HTTPS Render'):
+        hosting.publish_connection(config, 'https://new.trycloudflare.com')
+    assert len(calls) == 1
