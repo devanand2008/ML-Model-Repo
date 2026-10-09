@@ -1,5 +1,6 @@
 """Run the owned laptop bridge and free Cloudflare tunnel; reconnect Render on restart."""
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -46,6 +47,16 @@ def render_request(path, data=None, method=None):
     # The CLI key stays on this laptop. Never send it to Cloudflare or put it in Git.
     token = yaml.safe_load(cli.read_text())['api']['key']
     return request('https://api.render.com/v1' + path, data, method, {'Authorization': 'Bearer ' + token})
+
+
+def upstream_admin_authorization():
+    from dotenv import dotenv_values
+    values = dotenv_values(ROOT / '.env')
+    username = values.get('ADMIN_USERNAME', 'admin')
+    password = values.get('ADMIN_PASSWORD', '')
+    if not username or len(password) < 12:
+        raise RuntimeError('Public admin requires the strong laptop administrator credential')
+    return 'Basic ' + base64.b64encode(f'{username}:{password}'.encode('utf-8')).decode('ascii')
 
 
 def install_cloudflared():
@@ -147,6 +158,10 @@ def supervise():
                         if service['serviceDetails']['plan'] != 'free':
                             raise RuntimeError('Refusing to modify a paid service')
                         if config.get('deployed_tunnel_url') != url:
+                            if config.get('public_admin'):
+                                render_request('/services/' + service_id + '/env-vars/UPSTREAM_ADMIN_AUTHORIZATION',
+                                    {'value': upstream_admin_authorization()}, 'PUT')
+                                render_request('/services/' + service_id + '/env-vars/PUBLIC_ADMIN_ENABLED', {'value': 'true'}, 'PUT')
                             render_request('/services/' + service_id + '/env-vars/TUNNEL_URL', {'value': url}, 'PUT')
                             render_request('/services/' + service_id + '/deploys', {'clearCache': 'do_not_clear'}, 'POST')
                             config['deployed_tunnel_url'] = url

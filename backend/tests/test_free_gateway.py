@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import sys
 from pathlib import Path
 
@@ -98,3 +99,45 @@ def test_websocket_preserves_binary_frames_and_rejects_foreign_origin(monkeypatc
         assert received == [b'jpeg']
         with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect('/api/analyze/live', headers={'Origin': 'https://evil.com'}): pass
+
+
+def test_public_admin_authenticates_anonymous_requests_only_on_the_cloud_hop(monkeypatch, tmp_path):
+    credential = 'Basic ' + base64.b64encode(b'admin:server-secret-password').decode()
+    monkeypatch.setenv('PUBLIC_ORIGIN', HOST)
+    app = free_gateway.create_app(target='https://demo.trycloudflare.com', token=TOKEN,
+        bridge=False, static_dir=tmp_path, public_admin=True, admin_authorization=credential)
+    class Bytes(httpx.AsyncByteStream):
+        async def __aiter__(self): yield b'{"username":"admin"}'
+    def backend(request):
+        assert request.headers['authorization'] == credential
+        assert request.headers['x-transitopt-bridge'] == TOKEN
+        return httpx.Response(200, stream=Bytes(), headers={'content-type': 'application/json'})
+    with TestClient(app, base_url=HOST) as client:
+        original = app.state.client
+        upstream = httpx.AsyncClient(transport=httpx.MockTransport(backend))
+        app.state.client = upstream
+        for headers in ({}, {'Authorization': 'Basic stale-browser-credential'}):
+            reply = client.get('/api/session', headers=headers)
+            assert reply.json()['username'] == 'admin'
+            assert credential not in reply.text and credential not in str(reply.headers)
+        app.state.client = original
+        asyncio.run(upstream.aclose())
+    # A bridge never grants anonymous admin, even if cloud settings leaked into its environment.
+    bridge = free_gateway.create_app(target='http://127.0.0.1:8000', token=TOKEN, bridge=True,
+        static_dir=tmp_path, public_admin=True, admin_authorization=credential)
+    with TestClient(bridge) as client:
+        assert client.get('/api/session').status_code == 403
+
+
+def test_public_admin_requires_a_server_secret_and_blocks_executable_model_uploads(monkeypatch, tmp_path):
+    monkeypatch.delenv('UPSTREAM_ADMIN_AUTHORIZATION', raising=False)
+    with pytest.raises(ValueError, match='server-side'):
+        free_gateway.create_app(target='https://demo.trycloudflare.com', token=TOKEN, bridge=False, public_admin=True)
+    credential = 'Basic ' + base64.b64encode(b'admin:server-secret-password').decode()
+    app = free_gateway.create_app(target='https://demo.trycloudflare.com', token=TOKEN, bridge=False,
+        static_dir=tmp_path, public_admin=True, admin_authorization=credential)
+    with TestClient(app, base_url=HOST) as client:
+        for path in ['/api/models/upload', '/api/models/upload/', '/api/models%2fupload', '/api/models%252fupload']:
+            reply = client.post(path, content=b'untrusted model')
+            assert reply.status_code == 403
+            assert 'laptop' in reply.json()['detail']

@@ -13,6 +13,10 @@ services:
     numInstances: 1
     autoDeployTrigger: commit
     envVars:
+      - key: PUBLIC_ADMIN_ENABLED
+        value: "true"
+      - key: UPSTREAM_ADMIN_AUTHORIZATION
+        sync: false
       - key: TUNNEL_URL
         sync: false
       - key: BRIDGE_TOKEN

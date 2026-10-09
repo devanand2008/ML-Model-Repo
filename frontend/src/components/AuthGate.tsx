@@ -3,18 +3,19 @@ import { Link } from 'react-router-dom';
 import { BASE_URL, session, setCredentials } from '../services/api';
 
 export default function AuthGate({children}:{children:ReactNode}) {
+  const publicAdmin = import.meta.env.VITE_PUBLIC_ADMIN === 'true';
   const [state,setState]=useState<'loading'|'login'|'ready'|'offline'>('loading');
   const [username,setUsername]=useState('admin');
   const [password,setPassword]=useState('');
   const [error,setError]=useState('');
   const check=async()=>{try{const r=await session();setState(r.ok?'ready':r.status===401?'login':'offline');setError(r.ok?'':`Server returned HTTP ${r.status}`);return r.ok;}catch(e){setError(e instanceof Error?e.message:'Connection failed');setState('offline');return false;}};
-  useEffect(()=>{check();},[]);
+  useEffect(()=>{if(!publicAdmin)check();},[publicAdmin]);
   useEffect(()=>{
     if(state!=='offline')return;
     const timer=window.setInterval(()=>{check();},3000);
     return ()=>window.clearInterval(timer);
   },[state]);
-  if(state==='ready')return children;
+  if(publicAdmin || state==='ready')return children;
   return <div className="min-h-screen animated-bg flex items-center justify-center p-6"><div className="glass p-8 max-w-md w-full space-y-5">
     <h1 className="gradient-text text-3xl font-bold">TransitOpt AI</h1>
     <Link to="/" className="text-cyan-400 text-sm">App home</Link><span className="text-slate-500 mx-2">·</span><Link to="/passenger" className="text-cyan-400 text-sm">Passenger navigation</Link>

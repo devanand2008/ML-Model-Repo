@@ -8,7 +8,7 @@ if not exist ".venv\Scripts\python.exe" (
   exit /b 1
 )
 echo Keep this window and the laptop running for online ML.
-echo The website address is printed below. Your existing app login still applies.
+echo The website address is printed below. Its admin dashboard is public.
 ".venv\Scripts\python.exe" scripts\start_free_hosting.py %*
 if errorlevel 1 pause
 endlocal

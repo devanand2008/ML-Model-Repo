@@ -9,7 +9,7 @@ Verified October 9, 2026: the service is on the `free` plan; its Linux gateway p
 ## Run or reconnect
 
 1. On the configured laptop, double-click **Start-Free-Hosting.bat**. Leave that window open and keep the laptop awake and connected to the internet.
-2. Open the Render website printed by the launcher. Use your existing TransitOpt admin login. Passenger and driver pages use their existing permissions. Browser camera and GPS still require your permission.
+2. Open the Render website printed by the launcher. **The hosted admin dashboard is public and has no ID/password sign-in. Anyone with the link can use admin controls.** The laptop app retains its existing sign-in. Browser camera and GPS still require your permission.
 3. If the laptop restarted, the launcher creates a new Cloudflare address and reconnects the free Render service. Wait for its deployment to finish, then refresh the website. Reconnection uses the official Render CLI login stored on the laptop; run `render login` again if it expires.
 4. Run `Start-Free-Hosting.bat status` to check the laptop bridge. Run `Start-Free-Hosting.bat stop` to close the public tunnel. The local ML app stays available.
 
@@ -19,9 +19,11 @@ The website shows whether laptop ML is connected. Its UI remains available when 
 
 Render → HTTPS Cloudflare Quick Tunnel → token-protected loopback bridge (8788) → ML server (8000).
 
-The Cloudflare address exposes the bridge, which requires a separate random secret on every ML request. The app's admin authentication still applies. The bridge exposes only the API, never arbitrary laptop files. Render stores `TUNNEL_URL` and `BRIDGE_TOKEN`; the Render account key stays on the laptop. The private `.tools/free-hosting.json` file contains the connection secret and must never be committed or shared. Logs are in `logs/free-bridge.log`, `logs/free-tunnel.log` and `logs/free-hosting.log`.
+The Cloudflare address exposes the bridge, which requires a separate random secret on every ML request. Render's public-admin mode supplies the laptop administrator credential on the server side; visitors receive no password or authorization token. The laptop backend still enforces authentication. Render stores `TUNNEL_URL`, `BRIDGE_TOKEN`, `PUBLIC_ADMIN_ENABLED=true` and the secret `UPSTREAM_ADMIN_AUTHORIZATION` (HTTP Basic authorization derived from the laptop `.env`). The Render account key stays on the laptop. The private `.tools/free-hosting.json` file contains the connection secret and must never be committed or shared. Logs are in `logs/free-bridge.log`, `logs/free-tunnel.log` and `logs/free-hosting.log`.
 
-The launcher stops only its own bridge and tunnel processes. It does not change firewall rules, enable remote desktop, install an automatic startup service, or stop the local ML app. Quick Tunnels do not require a Cloudflare account or domain. If recreating this setup on another computer, install the full local app, authenticate the official Render CLI, and configure a free gateway service with the same private bridge token.
+Model checkpoint uploads remain **laptop-only** because PyTorch `.pt` files can execute code when loaded. Public upload attempts return an explanatory error. Image/video analysis and the installed model tools remain available on the website. Upload a trusted new checkpoint through the signed-in laptop app. Public users share the same admin role and can change settings and application records; use this public setup only for data and controls you intend to share.
+
+The launcher stops only its own bridge and tunnel processes. It does not change firewall rules, enable remote desktop, install an automatic startup service, or stop the local ML app. Quick Tunnels do not require a Cloudflare account or domain. If recreating this setup on another computer, install the full local app, authenticate the official Render CLI, and configure a free gateway service with the same private bridge token and server-side admin credential. On tunnel reconnection, the launcher synchronizes the current laptop admin credential for configurations marked `public_admin`.
 
 ## Free plan limits
 

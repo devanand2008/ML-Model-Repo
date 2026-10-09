@@ -1,11 +1,13 @@
 """Small cloud website and token-protected laptop bridge. No ML imports here."""
 import asyncio
 import anyio
+import base64
 import os
+import posixpath
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 import httpx
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -33,12 +35,22 @@ def validated_target(target, bridge):
     return target.rstrip('/')
 
 
-def create_app(*, target=None, token=None, bridge=None, static_dir=None):
+def create_app(*, target=None, token=None, bridge=None, static_dir=None, public_admin=None, admin_authorization=None):
     bridge = os.getenv('GATEWAY_MODE') == 'bridge' if bridge is None else bridge
     target = validated_target(target or ('http://127.0.0.1:8000' if bridge else os.environ['TUNNEL_URL']), bridge)
     token = token or os.environ['BRIDGE_TOKEN']
     if len(token) < 32:
         raise ValueError('BRIDGE_TOKEN must have at least 32 characters')
+    public_admin = (os.getenv('PUBLIC_ADMIN_ENABLED', 'false').lower() == 'true' if public_admin is None else public_admin) and not bridge
+    admin_authorization = admin_authorization or os.getenv('UPSTREAM_ADMIN_AUTHORIZATION', '')
+    if public_admin:
+        try:
+            scheme, encoded = admin_authorization.split(' ', 1)
+            username, password = base64.b64decode(encoded, validate=True).decode('utf-8').split(':', 1)
+            if scheme != 'Basic' or not username or len(password) < 12:
+                raise ValueError()
+        except (ValueError, UnicodeError):
+            raise ValueError('Public admin requires a strong server-side upstream credential') from None
     static = Path(static_dir or ROOT / 'frontend' / 'dist').resolve()
     public_origin = os.getenv('PUBLIC_ORIGIN') or ('https://' + os.environ['RENDER_EXTERNAL_HOSTNAME'] if 'RENDER_EXTERNAL_HOSTNAME' in os.environ else None)
 
@@ -63,6 +75,8 @@ def create_app(*, target=None, token=None, bridge=None, static_dir=None):
         result['origin'] = target
         if not bridge:
             result['x-transitopt-bridge'] = token
+            if public_admin:
+                result['authorization'] = admin_authorization
         return result
 
     @app.get('/gateway/health')
@@ -78,12 +92,18 @@ def create_app(*, target=None, token=None, bridge=None, static_dir=None):
             online = response.status_code == 200 and response.json().get('status') == 'ok'
         except (httpx.HTTPError, ValueError):
             online = False
-        return JSONResponse({'hosting': 'free-hybrid', 'ml_online': online}, headers={'Cache-Control': 'no-store'})
+        return JSONResponse({'hosting': 'free-hybrid', 'ml_online': online, 'public_admin': public_admin}, headers={'Cache-Control': 'no-store'})
 
     @app.api_route('/{path:path}', methods=['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])
     async def relay(path: str, request: Request):
         if not allowed(request):
             return JSONResponse({'detail': 'Forbidden'}, status_code=403)
+        canonical = path
+        for _ in range(3):
+            canonical = unquote(canonical)
+        canonical = posixpath.normpath('/' + canonical).rstrip('/')
+        if public_admin and request.method not in {'GET', 'HEAD', 'OPTIONS'} and canonical == '/api/models/upload':
+            return JSONResponse({'detail': 'Model checkpoint uploads are available only on the laptop app. Model files can execute code when loaded.'}, status_code=403)
         if not (path.startswith('api/') or path == 'openapi.json'):
             if bridge or request.method not in {'GET', 'HEAD'}:
                 return JSONResponse({'detail': 'Not found'}, status_code=404)

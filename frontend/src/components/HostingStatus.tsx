@@ -18,6 +18,6 @@ export default function HostingStatus() {
   }, []);
   if (import.meta.env.VITE_HOSTING_MODE !== 'free-hybrid') return null;
   return <div role="status" style={{ padding: '8px 16px', background: online === false ? '#78350f' : '#164e63', color: '#fff', fontSize: 13, textAlign: 'center' }}>
-    {online === null ? 'Connecting to the laptop ML server…' : online ? 'ML connected · Keep the laptop and hosting launcher running.' : 'ML disconnected · Run Start-Free-Hosting.bat on the laptop, then refresh this page.'}
+    {import.meta.env.VITE_PUBLIC_ADMIN === 'true' && 'Public admin · '}{online === null ? 'Connecting to the laptop ML server…' : online ? 'ML connected · Keep the laptop and hosting launcher running.' : 'ML disconnected · Run Start-Free-Hosting.bat on the laptop, then refresh this page.'}
   </div>;
 }
