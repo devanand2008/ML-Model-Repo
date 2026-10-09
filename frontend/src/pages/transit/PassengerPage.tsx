@@ -6,6 +6,8 @@ import { ArrowRight, BusFront, Camera, Crosshair, MapPin, Navigation, Search, Sh
 import { transitRequest, type Data } from '../../services/transit';
 import ThemeToggle from '../../components/ThemeToggle';
 import RouteRagAssistant from '../../components/transit/RouteRagAssistant';
+import MapTrafficPanel from '../../components/transit/MapTrafficPanel';
+import { distanceMeters, distanceToPath, rankTrafficPlaces, trafficEvidence, TRAFFIC_COLORS, validPoint } from '../../services/mapIntelligence';
 import 'leaflet/dist/leaflet.css';
 import './passenger.css';
 
@@ -15,15 +17,18 @@ const SALEM: [number, number] = [11.6649, 78.1460];
 const colors = ['#1267e9', '#3b82f6', '#60a5fa', '#2563eb'];
 const marker = (label: string, color: string) => L.divIcon({ className: 'pa-pin', html: `<span style="background:${color}">${label}</span>`, iconSize: [34, 34], iconAnchor: [17, 17] });
 
-function RouteViewport({ route, routes }: { route?: Data; routes:Data[] }) {
+function RouteViewport({ route, routes, following, fitRequest }: { route?: Data; routes:Data[]; following:boolean; fitRequest:number }) {
   const map = useMap();
   const paths=routes.map(r=>r.id).join('|');
   const previousPaths=useRef('');
+  const previousFit=useRef(0);
   useEffect(() => {
-    const geometry = paths!==previousPaths.current ? routes.flatMap(r=>r.geometry??[]) : route?.geometry;
+    if (following) return;
+    const geometry = paths!==previousPaths.current || fitRequest!==previousFit.current ? routes.flatMap(r=>r.geometry??[]) : route?.geometry;
     previousPaths.current=paths;
+    previousFit.current=fitRequest;
     if (Array.isArray(geometry) && geometry.length > 1) map.fitBounds(geometry.map(([lon, lat]: [number, number]) => [lat, lon]), { padding: [45, 90], maxZoom: 15 });
-  }, [map, route?.id, paths]);
+  }, [map, route?.id, paths, following, fitRequest]);
   return null;
 }
 
@@ -31,10 +36,11 @@ export function googleDirections(origin: Point, destination: Point) {
   return `https://www.google.com/maps/dir/?${new URLSearchParams({ api: '1', origin: `${origin.latitude},${origin.longitude}`, destination: `${destination.latitude},${destination.longitude}`, travelmode: 'driving', dir_action: 'navigate' })}`;
 }
 
-function MapInteraction({ pick, setPoint, focus }: { pick: MapPick; setPoint: (point: Point) => void; focus: Point | null }) {
+function MapInteraction({ pick, setPoint, focus, tracking, following, position, stopFollowing }: { pick: MapPick; setPoint: (point: Point) => void; focus: Point | null; tracking:boolean; following:boolean; position:Point|null; stopFollowing:()=>void }) {
   const map = useMap();
-  useMapEvents({ click(event) { if (pick) setPoint({ latitude: event.latlng.lat, longitude: event.latlng.lng }); } });
+  useMapEvents({ click(event) { if (pick) setPoint({ latitude: event.latlng.lat, longitude: event.latlng.lng }); }, dragstart() { if(tracking)stopFollowing(); } });
   useEffect(() => { if (focus) map.flyTo([focus.latitude, focus.longitude], Math.max(map.getZoom(), 13)); }, [focus, map]);
+  useEffect(() => { if(tracking && following && position)map.setView([position.latitude,position.longitude],Math.max(map.getZoom(),15),{animate:true}); }, [map,tracking,following,position?.latitude,position?.longitude]);
   return null;
 }
 
@@ -54,6 +60,8 @@ export default function PassengerPage() {
   const [gpsState, setGpsState] = useState('Location permission has not been requested.');
   const [radius, setRadius] = useState(5);
   const [query, setQuery] = useState('');
+  const [searchTarget,setSearchTarget]=useState<'origin'|'destination'>('destination');
+  const [fitRequest,setFitRequest]=useState(0);
   const [places, setPlaces] = useState<Data[]>([]);
   const [cameras, setCameras] = useState<Data[]>([]);
   const [buses, setBuses] = useState<Data[]>([]);
@@ -67,6 +75,19 @@ export default function PassengerPage() {
   const [arrival,setArrival] = useState<Data|null>(null);
   const [arrivalError,setArrivalError] = useState('');
   const [navigating, setNavigating] = useState(false);
+  const [devicePosition,setDevicePosition]=useState<Point|null>(null);
+  const [deviceAccuracy,setDeviceAccuracy]=useState<number|null>(null);
+  const [following,setFollowing]=useState(true);
+  const [showTraffic,setShowTraffic]=useState(true);
+  const [trafficScope,setTrafficScope]=useState<'nearby'|'all'>('nearby');
+  const [trafficOrder,setTrafficOrder]=useState<'lowest'|'highest'>('highest');
+  const [feedCameras,setFeedCameras]=useState<Data[]>([]);
+  const [feedError,setFeedError]=useState('');
+  const [trafficUpdated,setTrafficUpdated]=useState<string|null>(null);
+  const [clock,setClock]=useState(Date.now());
+  const [focusedCamera,setFocusedCamera]=useState<string|null>(null);
+  const trackingRoutePoint=useRef<{point:Point;at:number}|null>(null);
+  const lastDeviceFix=useRef<number|null>(null);
   const [goal, setGoal] = useState<'fastest' | 'lowest_observed_traffic' | 'shortest'>('lowest_observed_traffic');
   const [useRecordedDemo,setUseRecordedDemo] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -85,20 +106,23 @@ export default function PassengerPage() {
   const [routeContextId,setRouteContextId]=useState<string|null>(null);
   const [busAdvice,setBusAdvice]=useState(searchParams.get('advice')==='bus');
   const routesRef = useRef<Data[]>([]);
+  const selectedRef=useRef<string|null>(null);
+  useEffect(()=>{selectedRef.current=selected;},[selected]);
   useEffect(() => { routesRef.current = routes; }, [routes]);
   useEffect(() => {
     let active = true, pending = false;
     const refresh = async () => {
       if (pending) return;
       pending = true;
-      try { const feed = await transitRequest<Data>('/api/public/traffic/feed'); if (active) setSharedAlerts(feed.alerts ?? []); }
-      catch { /* Route monitor reports its own connection status below. */ }
+      try { const feed = await transitRequest<Data>('/api/public/traffic/feed'); if (active) {setSharedAlerts(feed.alerts ?? []);setFeedCameras(feed.cameras??[]);setTrafficUpdated(new Date().toLocaleTimeString());setFeedError('');setClock(Date.now());} }
+      catch { if(active){setFeedError('Live traffic updates are disconnected. Last observations may be stale.');setClock(Date.now());} }
       finally { pending = false; }
     };
     refresh(); const timer = window.setInterval(refresh, 5000);
     return () => { active = false; window.clearInterval(timer); };
   }, []);
   const [lastFix, setLastFix] = useState<number | null>(null);
+  useEffect(()=>{const timer=window.setInterval(()=>setClock(Date.now()),5000);return()=>window.clearInterval(timer);},[]);
 
   useEffect(()=>{
     if(!linkedBus)return;
@@ -128,26 +152,39 @@ export default function PassengerPage() {
   }, []);
   useEffect(() => {
     if (!origin) return;
-    let active = true;
-    const refresh = () => {
+    let active = true, pending = false;
+    const refresh = async () => {
+      if(pending)return;pending=true;
       const q = `latitude=${origin.latitude}&longitude=${origin.longitude}`;
-      transitRequest<Data>(`/api/public/traffic/nearby?${q}&radius_km=${radius}`).then(data => { if (active) setCameras(data.cameras ?? []); }).catch(e => { if (active) setError(e.message); });
-      transitRequest<Data>(`/api/navigation/nearby-buses?${q}&radius_km=20`).then(data => { if (active) setBuses(data.buses ?? []); }).catch(e => { if (active) setError(e.message); });
+      await Promise.all([
+        transitRequest<Data>(`/api/public/traffic/nearby?${q}&radius_km=${radius}`).then(data => { if (active) setCameras(data.cameras ?? []); }).catch(e => { if (active) setError(e.message); }),
+        transitRequest<Data>(`/api/navigation/nearby-buses?${q}&radius_km=20`).then(data => { if (active) setBuses(data.buses ?? []); }).catch(e => { if (active) setError(e.message); })
+      ]);pending=false;
     };
     refresh();
     const timer = window.setInterval(refresh, 10000);
     return () => { active = false; window.clearInterval(timer); };
   }, [origin?.latitude, origin?.longitude, radius]);
   useEffect(() => {
-    if (!navigating || !navigator.geolocation) return;
+    if (!navigating || typeof navigator.geolocation?.watchPosition !== 'function') return;
+    let active=true;
     const id = navigator.geolocation.watchPosition(position => {
-      setOrigin({ latitude: position.coords.latitude, longitude: position.coords.longitude });
+      if(!active)return;
+      const point={ latitude: position.coords.latitude, longitude: position.coords.longitude };
+      if(!validPoint(point) || !Number.isFinite(position.coords.accuracy))return;
+      setDevicePosition(point);setDeviceAccuracy(position.coords.accuracy);
+      const now=Date.now();lastDeviceFix.current=now;
+      const previous=trackingRoutePoint.current;
+      const acceptable=position.coords.accuracy<=100;
+      const shouldReplan=acceptable && (!previous || now-previous.at>=30000 &&
+        (distanceMeters(previous.point,point)>=100 || distanceToPath(point,routesRef.current.find(r=>r.id===selectedRef.current)?.geometry??[])>Math.max(75,position.coords.accuracy*2)));
+      if(shouldReplan){trackingRoutePoint.current={point,at:now};setOrigin(point);}
       setAccuracy(position.coords.accuracy);
-      setLastFix(Date.now());
-      setGpsState(`GPS updated ${new Date().toLocaleTimeString()}`);
-    }, e => setGpsState(`GPS signal unavailable: ${e.message}. Manual origin remains available.`),
+      setLastFix(now);
+      setGpsState(`GPS updated ${new Date().toLocaleTimeString()}${acceptable?'':' · Low accuracy; route updates paused'}`);
+    }, e => {if(active){setGpsState(`GPS signal unavailable: ${e.message}. Manual origin remains available.`);if(e.code===1)setNavigating(false);}},
     { enableHighAccuracy: true, maximumAge: 5000, timeout: 12000 });
-    return () => navigator.geolocation.clearWatch(id);
+    return () => {active=false;navigator.geolocation.clearWatch(id);};
   }, [navigating]);
   useEffect(() => {
     if (!trackedBus) return;
@@ -200,7 +237,6 @@ export default function PassengerPage() {
 
   useEffect(() => {
     // Replan after endpoint/goal changes; GPS tracking must not trigger a request per fix.
-    if (navigating) { setBusy(false); return; }
     setRouteContextId(null);
     if (!origin || !destination) return;
     const timer = window.setTimeout(() => { void plan(); }, 400);
@@ -211,6 +247,20 @@ export default function PassengerPage() {
 
   const selectedRoute = useMemo(() => routes.find(route => route.id === selected), [routes, selected]);
   const displayBuses = useMemo(() => Array.from(new Map([...buses, ...busResults].map(bus => [bus.id, bus])).values()), [buses, busResults]);
+  const mappedCameras=useMemo<Data[]>(()=>{
+    const all=Array.from(new Map([...cameras,...feedCameras].map(camera=>[camera.id,camera])).values()).filter(camera=>validPoint(camera as Point));
+    return all.map((camera):Data=>({...camera,distance_km:origin?distanceMeters(origin,camera as Point)/1000:camera.distance_km}))
+      .filter(camera=>trafficScope==='all'||!origin||camera.distance_km<=radius);
+  },[cameras,feedCameras,origin?.latitude,origin?.longitude,radius,trafficScope]);
+  const rankedTraffic=useMemo(()=>rankTrafficPlaces(mappedCameras,clock),[mappedCameras,clock]);
+  const trafficList=trafficOrder==='lowest'?rankedTraffic:[...rankedTraffic].reverse();
+  const cameraDetails=mappedCameras.find(camera=>camera.id===focusedCamera);
+  function focusTraffic(camera:Data){setFollowing(false);setFocusedCamera(camera.id);setFocus({latitude:camera.latitude,longitude:camera.longitude});}
+  function startTracking(){
+    if(typeof navigator.geolocation?.watchPosition!=='function'){setGpsState('Live location tracking is unavailable in this browser. Use my GPS or pick an origin.');return;}
+    setLinkedBus('');setFollowing(true);setPick(null);setGpsState('Waiting for live GPS permission…');
+    trackingRoutePoint.current=origin?{point:origin,at:Date.now()}:null;setNavigating(true);
+  }
 
   function locate() {
     setLinkedBus('');
@@ -219,6 +269,7 @@ export default function PassengerPage() {
     navigator.geolocation.getCurrentPosition(position => {
       const point = { latitude: position.coords.latitude, longitude: position.coords.longitude };
       setNavigating(false); setOrigin(point); setFocus(point); setAccuracy(position.coords.accuracy);
+      setDevicePosition(point);setDeviceAccuracy(position.coords.accuracy);lastDeviceFix.current=Date.now();setFollowing(true);
       setRoutes([]);routesRef.current=[];setSelected(null);setRouteAlerts([]);setRecommendedId(null);
       setLastFix(Date.now());
       setGpsState(`GPS fix received ${new Date().toLocaleTimeString()}`);
@@ -259,23 +310,25 @@ export default function PassengerPage() {
   const effectivePick=pick??(!origin?'origin':!destination?'destination':null);
   const choosePoint = (point: Point) => {
     if(!effectivePick)return;
-    setNavigating(false);setRouteContextId(null);
+    if(effectivePick==='origin')setNavigating(false);setFollowing(false);setRouteContextId(null);
     if(effectivePick==='origin'){setLinkedBus('');setOrigin(point);setAccuracy(null);setLastFix(null);setGpsState('Manual origin selected.');setPick(destination?null:'destination');}
     else{setDestination(point);setPick(null);}
     setFocus(point);setRoutes([]);routesRef.current=[];setSelected(null);setRouteAlerts([]);setRecommendedId(null);
   };
-  function newJourney(){planController.current?.abort();window.clearTimeout(planTimer.current);planVersion.current+=1;setBusy(false);setNavigating(false);setLinkedBus('');setBusAdvice(false);setOrigin(null);setDestination(null);setPick('origin');setAccuracy(null);setLastFix(null);setQuery('');setRoutes([]);routesRef.current=[];setSelected(null);setRecommendedId(null);setRouteAlerts([]);setRouteContextId(null);setAutoRoute(true);setSwitchNotice('');setError('');setGpsState('Click the start, then the destination on the map.');}
-  const choosePlace = (place: Data) => { setNavigating(false); const point = { latitude: place.latitude, longitude: place.longitude }; setDestination(point); setFocus(point); setPlaces([]); setQuery(place.name); setRoutes([]); routesRef.current=[]; setSelected(null); setRouteAlerts([]); setRecommendedId(null); };
+  function newJourney(){planController.current?.abort();window.clearTimeout(planTimer.current);planVersion.current+=1;setBusy(false);setNavigating(false);setDevicePosition(null);setDeviceAccuracy(null);lastDeviceFix.current=null;setFocusedCamera(null);setFollowing(true);setLinkedBus('');setBusAdvice(false);setOrigin(null);setDestination(null);setPick('origin');setAccuracy(null);setLastFix(null);setQuery('');setRoutes([]);routesRef.current=[];setSelected(null);setRecommendedId(null);setRouteAlerts([]);setRouteContextId(null);setAutoRoute(true);setSwitchNotice('');setError('');setGpsState('Click the start, then the destination on the map.');}
+  const choosePlace = (place: Data) => { setFollowing(false); const point = { latitude: place.latitude, longitude: place.longitude }; if(searchTarget==='origin'){setNavigating(false);setLinkedBus('');setOrigin(point);setAccuracy(null);setGpsState(`Starting from ${place.name}`);}else setDestination(point);setFocus(point);setPlaces([]);setQuery(place.name);setRoutes([]);routesRef.current=[];setSelected(null);setRouteAlerts([]);setRecommendedId(null); };
+  function swapPoints(){if(!origin||!destination)return;setNavigating(false);setLinkedBus('');setOrigin(destination);setDestination(origin);setAccuracy(null);setLastFix(null);setRoutes([]);routesRef.current=[];setSelected(null);setPick(null);setQuery('');setGpsState('Start and destination swapped.');}
 
   return <div className="pa-shell">
-    <header className="pa-header"><Link to="/" className="pa-brand"><BusFront size={24} /> TRANSITOPT <span>AI 2.0</span></Link><div className="pa-header-label">SALEM PASSENGER NAVIGATION <span>· DEMO MAP</span></div><div style={{ display: 'flex', alignItems: 'center', gap: 14 }}><ThemeToggle variant="compact" /><Link className="pa-operator-link" to="/admin">Head office <ArrowRight size={15} /></Link></div></header>
+    <header className="pa-header"><Link to="/" className="pa-brand"><BusFront size={24} /> TRANSITOPT <span>AI 2.0</span></Link><div className="pa-header-label">LIVE LOCATION & TRAFFIC <span>· CAMERA COVERAGE</span></div><div style={{ display: 'flex', alignItems: 'center', gap: 14 }}><ThemeToggle variant="compact" /><Link className="pa-operator-link" to="/admin">Head office <ArrowRight size={15} /></Link></div></header>
     <main className="pa-workspace">
       <aside className="pa-sidebar">
-        <div className="pa-intro"><div className="pa-eyebrow">DETECT · TRACK · NAVIGATE</div><h1>Move with clarity.</h1><p>Find a road route, inspect nearby camera coverage, and track registered buses when GPS updates are available.</p></div>
+        <div className="pa-intro"><div className="pa-eyebrow">DETECT · TRACK · NAVIGATE</div><h1>Move with clarity.</h1><p>Track your blue location dot, compare blue road routes, and find low or high traffic reported by located cameras.</p></div>
         <div className="pa-section"><h2><Navigation size={17} /> Plan your journey</h2>
-          <form className="pa-search" onSubmit={searchPlaces}><Search size={16} /><input aria-label="Search destination" placeholder="Search a destination in India" value={query} onChange={e => setQuery(e.target.value)} /><button disabled={busy || query.trim().length < 3}>Search</button></form>
+          <label className="pa-select">Search for<select aria-label="Place search target" value={searchTarget} onChange={event=>{setSearchTarget(event.target.value as typeof searchTarget);setPlaces([]);setQuery('');}}><option value="destination">Destination</option><option value="origin">Starting place</option></select></label>
+          <form className="pa-search" onSubmit={searchPlaces}><Search size={16} /><input aria-label={searchTarget==='origin'?'Search starting place':'Search destination'} placeholder={searchTarget==='origin'?'Search your starting place in India':'Search a destination in India'} value={query} onChange={e => setQuery(e.target.value)} /><button disabled={busy || query.trim().length < 3}>Search</button></form>
           {places.length > 0 && <div className="pa-place-results">{places.map((place, i) => <button key={i} onClick={() => choosePlace(place)}><MapPin size={14} />{place.name}</button>)}</div>}
-          <div className="pa-point-actions"><button onClick={locate}><Crosshair size={15} /> Use my GPS</button><button className={effectivePick === 'origin' ? 'selected' : ''} onClick={() => setPick('origin')}>Pick origin</button><button className={effectivePick === 'destination' ? 'selected' : ''} onClick={() => setPick('destination')}>Pick destination</button><button onClick={newJourney}>New map journey</button></div>
+          <div className="pa-point-actions"><button onClick={locate}><Crosshair size={15} /> Use my GPS</button><button className={effectivePick === 'origin' ? 'selected' : ''} onClick={() => setPick('origin')}>Pick origin</button><button className={effectivePick === 'destination' ? 'selected' : ''} onClick={() => setPick('destination')}>Pick destination</button><button disabled={!origin||!destination} onClick={swapPoints}>Swap start / destination</button><button onClick={newJourney}>New map journey</button></div>
           <p className="pa-map-instructions">{!origin?'1. Click the map to choose your start.':!destination?'2. Click the map to choose your destination.':'Click a blue line or a route card to choose a way to reach your destination.'}</p>
           <div className="pa-coordinates"><span>START <b>{origin ? `${origin.latitude.toFixed(5)}, ${origin.longitude.toFixed(5)}` : 'Choose on map or use GPS'}</b></span><span>DESTINATION <b>{destination ? `${destination.latitude.toFixed(5)}, ${destination.longitude.toFixed(5)}` : 'Search or choose on map'}</b></span></div>
           <div className="pa-gps-note">{gpsState}{accuracy != null ? ` · accuracy ±${Math.round(accuracy)} m` : ''}</div>
@@ -285,19 +338,27 @@ export default function PassengerPage() {
           <label className="pa-muted" style={{display:'flex',gap:8,marginBottom:14}}><input type="checkbox" checked={useRecordedDemo} onChange={e=>setUseRecordedDemo(e.target.checked)}/>Use recorded demo traffic in route comparison</label>
           <button className="pa-primary" disabled={busy || !origin || !destination} onClick={() => plan()}>{busy ? 'Checking road routes…' : 'Find road routes'} <ArrowRight size={16} /></button>
         </div>
-        <div className="pa-section"><h2><Camera size={17} /> Camera coverage</h2><div className="pa-radii">{[1, 3, 5, 10].map(value => <button key={value} className={radius === value ? 'selected' : ''} onClick={() => setRadius(value)}>{value} km</button>)}</div><p className="pa-muted">The circle shows camera discovery around the selected origin. Each camera observes only its own view.</p>{cameras.map(camera => <div className="pa-camera" key={camera.id}><span className="pa-status-dot" style={{ background: camera.observation?.live ? '#00e5a0' : '#fbbf24' }} /><div><strong>{camera.name}</strong><small>{km(camera.distance_km)} · {camera.observation?.live ? `${camera.observation.category} · live camera` : camera.observation?.fresh && camera.observation?.observation_type==='recorded_detection' ? `${camera.observation.category} · recorded evidence` : 'Current traffic unknown'}</small></div></div>)}{origin && !cameras.length && <p className="pa-muted">No registered road cameras in this radius.</p>}</div>
+        <MapTrafficPanel cameras={mappedCameras} ranked={rankedTraffic} ordered={trafficList} now={clock} radius={radius} scope={trafficScope} order={trafficOrder} updated={trafficUpdated} error={feedError} hasOrigin={Boolean(origin)} onRadius={setRadius} onScope={setTrafficScope} onOrder={setTrafficOrder} onFocus={focusTraffic}/>
+
       </aside>
-      <div className="pa-map-pane"><MapContainer className="pa-map" center={SALEM} zoom={13} zoomControl={false} scrollWheelZoom><TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>' url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" /><ZoomControl position="bottomleft" /><MapInteraction pick={effectivePick} setPoint={choosePoint} focus={focus} /><RouteViewport route={selectedRoute} routes={routes} />
-        {origin && <><Circle center={[origin.latitude, origin.longitude]} radius={radius * 1000} pathOptions={{ color: '#43baff', fillColor: '#43baff', fillOpacity: .07, weight: 1 }} /><Marker position={[origin.latitude, origin.longitude]} icon={marker('●', '#2e90ff')}><Popup>Your selected origin{accuracy != null ? ` · GPS accuracy ±${Math.round(accuracy)} m` : ''}</Popup></Marker></>}
+      <div className="pa-map-pane"><MapContainer className="pa-map" center={SALEM} zoom={13} zoomControl={false} scrollWheelZoom><TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>' url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" /><ZoomControl position="bottomleft" /><MapInteraction pick={effectivePick} setPoint={choosePoint} focus={focus} tracking={navigating} following={following} position={devicePosition} stopFollowing={()=>setFollowing(false)}/><RouteViewport route={selectedRoute} routes={routes} following={navigating&&following} fitRequest={fitRequest}/>
+        {origin && <><Circle center={[origin.latitude, origin.longitude]} radius={radius * 1000} pathOptions={{ color: '#43baff', fillColor: '#43baff', fillOpacity: .03, weight: 1, dashArray:'4 6' }} /><Marker position={[origin.latitude, origin.longitude]} icon={marker('A', '#2e90ff')}><Popup>Route starting point</Popup></Marker></>}
+        {devicePosition && <><Circle center={[devicePosition.latitude,devicePosition.longitude]} radius={deviceAccuracy??0} pathOptions={{color:'#2563eb',fillColor:'#2563eb',fillOpacity:.12,weight:1}}/><CircleMarker center={[devicePosition.latitude,devicePosition.longitude]} radius={9} pathOptions={{color:'#ffffff',fillColor:clock-(lastDeviceFix.current??0)>90000?'#64748b':'#2563eb',fillOpacity:1,weight:3}}><Popup>Your device location · ±{Math.round(deviceAccuracy??0)} m{clock-(lastDeviceFix.current??0)>90000?' · Last known location':''}</Popup><Tooltip>Your location</Tooltip></CircleMarker></>}
+
         {destination && <Marker position={[destination.latitude, destination.longitude]} icon={marker('◆', '#fbbf24')}><Popup>Destination</Popup></Marker>}
         {routes.map((route, index) => <Polyline key={route.id} bubblingMouseEvents={false} positions={(route.geometry ?? []).map(([lon, lat]: [number, number]) => [lat, lon])} pathOptions={{ color: route.id === selected ? colors[0] : colors[(index % 3) + 1], weight: route.id === selected ? 8 : 5, opacity: route.id === selected ? 1 : .8 }} eventHandlers={{ click: () => selectRoute(route.id) }}><Tooltip sticky>Road option {index+1} | {route.base_duration_minutes} min | {km(route.distance_km)}</Tooltip></Polyline>)}
         {arrival?.geometry && <Polyline positions={arrival.geometry.map(([lon,lat]:[number,number])=>[lat,lon])} pathOptions={{color:'#965cfa',weight:5,dashArray:'8 6'}}><Tooltip>Configured bus stop sequence · road profile estimate</Tooltip></Polyline>}
         {stops.filter(stop => stop.latitude != null).map(stop => <CircleMarker key={stop.id} center={[stop.latitude, stop.longitude]} radius={5} pathOptions={{ color: '#ffffff', fillColor: '#37d7bc', fillOpacity: 1, weight: 2 }}><Tooltip>{stop.name} · {stop.coordinate_source==='illustrative_demo_coordinate'?'illustrative demo location':'operator configured location'}</Tooltip></CircleMarker>)}
-        {cameras.map(camera=><CircleMarker key={camera.id} center={[camera.latitude,camera.longitude]} radius={8} pathOptions={{color:'#061828',fillColor:camera.observation?.live?'#00e5a0':'#fbbf24',fillOpacity:1,weight:2}}><Popup><strong>{camera.name}</strong><br/>{camera.coordinate_source.replaceAll('_',' ')}<br/>{camera.observation?.live?`Live camera: ${camera.observation.category}`:camera.observation?.observation_type==='recorded_detection'?`Recorded evidence: ${camera.observation.category}`:'Current traffic unknown'}</Popup></CircleMarker>)}
+        {showTraffic&&mappedCameras.map(camera=>{const evidence=trafficEvidence(camera,clock);return <CircleMarker key={camera.id} center={[camera.latitude,camera.longitude]} radius={camera.id===focusedCamera?13:9} pathOptions={{color:'#ffffff',fillColor:evidence.color,fillOpacity:1,weight:2}} eventHandlers={{click:()=>focusTraffic(camera)}}><Tooltip>{camera.name} · {evidence.label}</Tooltip><Popup><strong>{camera.name}</strong><br/>{evidence.label}<br/>{camera.coordinate_source?.replaceAll('_',' ')}<br/>{camera.observation?.timestamp&&`Last report ${formatTime(camera.observation.timestamp)}`}</Popup></CircleMarker>;})}
+
         {displayBuses.filter(bus => bus.location).map(bus => <Marker key={bus.id} position={[bus.location.latitude, bus.location.longitude]} icon={marker('B', bus.location.fresh ? '#00e5a0' : '#8a9ba7')}><Popup><strong>{bus.registration_number ?? bus.id}</strong><br />Route {bus.route_id}<br />{bus.location.source==='demo_simulation'?'SIMULATION GPS':'GPS'} {formatTime(bus.location.timestamp)} · {bus.location.fresh ? 'fresh' : 'last known, stale'}<br />{crowdText(bus.crowding)}</Popup></Marker>)}
-      </MapContainer><div className="pa-map-caption">{pick ? `Click the map to set your ${pick}` : 'OSRM roads · OpenStreetMap · Demo pins approximate'}</div>
+      </MapContainer><div className="pa-map-caption">{effectivePick ? `Click the map to set your ${effectivePick}` : 'Blue road alternatives · Colored camera traffic'}</div>
+        <div className="pa-map-tools" aria-label="Map controls"><button aria-label={navigating?'Stop live location tracking':'Start live location tracking'} aria-pressed={navigating} onClick={()=>navigating?setNavigating(false):startTracking()}><Navigation size={18}/>{navigating?'Stop tracking':'Live location'}</button><button aria-label="Recenter on my location" disabled={!devicePosition} onClick={()=>{setFollowing(true);setFocusedCamera(null);if(devicePosition)setFocus({...devicePosition});}}><Crosshair size={18}/>Recenter</button><button disabled={!routes.length} onClick={()=>{setFollowing(false);setFitRequest(value=>value+1);}}><MapPin size={18}/>Fit routes</button><button aria-pressed={showTraffic} onClick={()=>setShowTraffic(value=>!value)}><Camera size={18}/>{showTraffic?'Hide traffic':'Show traffic'}</button></div>
+        {navigating&&<div className="pa-tracking-status">{clock-(lastDeviceFix.current??0)>90000?'Waiting for a fresh GPS fix':following?'Following your location':'Location tracking on · Recenter to follow'}</div>}
+        {showTraffic&&<div className="pa-map-legend" aria-label="Map traffic legend">{Object.entries(TRAFFIC_COLORS).map(([level,color])=><span key={level}><i style={{background:color}}/>{level.charAt(0)+level.slice(1).toLowerCase()}</span>)}</div>}
+        {cameraDetails&&showTraffic&&<div className="pa-camera-detail"><button aria-label="Close traffic place" onClick={()=>setFocusedCamera(null)}>×</button><strong>{cameraDetails.name}</strong><span style={{color:trafficEvidence(cameraDetails,clock).color}}>{trafficEvidence(cameraDetails,clock).label}</span><small>Camera view only · {cameraDetails.coordinate_source?.replaceAll('_',' ')}</small><div><button className="pa-detail-route" onClick={()=>{setDestination({latitude:cameraDetails.latitude,longitude:cameraDetails.longitude});setQuery(cameraDetails.name);setSearchTarget('destination');setPick(null);setRoutes([]);routesRef.current=[];setSelected(null);if(!origin)setError('Choose your starting place or use GPS to get directions to this traffic place.');}}>Directions to this place</button></div></div>}
         {error && <div className="pa-error" role="alert">{error}<button onClick={() => setError('')}>Dismiss</button></div>}
-        {selectedRoute && <div className="pa-route-card"><div><small>SELECTED ROAD ROUTE</small><strong>{km(selectedRoute.distance_km)} · {selectedRoute.base_duration_minutes} min</strong><p>{selectedRoute.observed_camera_count ? `${selectedRoute.observed_camera_count} local camera observation(s) · comparison ${selectedRoute.comparison_minutes} min` : 'Traffic conditions unknown along most of this route'}</p></div><button disabled={Boolean(linkedBus)} onClick={() => setNavigating(value => !value)}>{linkedBus ? 'Following bus GPS' : navigating ? 'Stop GPS tracking' : 'Track my position'}</button></div>}
+        {selectedRoute && <div className="pa-route-card"><div><small>SELECTED ROAD ROUTE</small><strong>{km(selectedRoute.distance_km)} · {selectedRoute.base_duration_minutes} min</strong><p>{selectedRoute.observed_camera_count ? `${selectedRoute.observed_camera_count} local camera observation(s) · comparison ${selectedRoute.comparison_minutes} min` : 'Traffic conditions unknown along most of this route'}</p></div><button disabled={Boolean(linkedBus)} onClick={() => navigating ? setNavigating(false) : startTracking()}>{linkedBus ? 'Following bus GPS' : navigating ? 'Stop GPS tracking' : 'Track my position'}</button></div>}
       </div>
       <aside className="pa-right"><div className="pa-right-heading"><span>TRAVEL INTELLIGENCE</span><ShieldCheck size={17} /></div>
         <h2>Route options</h2>{routes.length===1&&<p className="pa-muted">The provider returned one valid road path. No other alternative is currently available.</p>}{routes.length>1&&<p className="pa-muted">{routes.length} ways to reach your destination. Blue lines show provider road alternatives; the thicker line is selected.</p>}{selected && <p className="pa-muted">{autoRoute ? 'Automatic routing on - checks every 5 seconds' : 'Manual route - traffic checks every 5 seconds'}{checkedAt && ` - checked ${checkedAt}`}</p>}{switchNotice && <div className="pa-route-update" role="status">{switchNotice}</div>}{origin && destination && <><a className="pa-google-link" href={googleDirections(origin, destination)} target="_blank" rel="noopener noreferrer">Open in Google Maps <Navigation size={16}/></a><p className="pa-muted">Google Maps calculates its own route and travel time for these points.</p></>}{monitorError && <p className="pa-muted" role="status">{monitorError}</p>}
@@ -306,7 +367,7 @@ export default function PassengerPage() {
         {routes.length > 0 && <p className="pa-muted">{notice} Selecting an alternative changes only your journey.</p>}
         {routes.length>0&&<>{linkedBus&&<label className="pa-auto-route"><input type="checkbox" checked={busAdvice} onChange={e=>setBusAdvice(e.target.checked)}/>Include bus service constraints (operator sign-in)</label>}<RouteRagAssistant contextId={routeContextId} busId={busAdvice?linkedBus:null} recommendedId={recommendedId} onSelect={selectRoute}/></>}<div className="pa-divider" /><h2>Shared traffic updates</h2>{sharedAlerts.length ? sharedAlerts.map(alert => <div className="pa-camera" key={alert.id}><Camera size={15} /><div><strong>{alert.camera_name}</strong><small>{alert.message}</small></div></div>) : <p className="pa-muted">No active camera reports high traffic pressure. Traffic on unobserved roads remains unknown.</p>}<div className="pa-divider" /><h2>Find a bus</h2><form className="pa-search" onSubmit={searchBus}><Search size={16} /><input aria-label="Find bus or route" placeholder="Bus, route, stop or destination" value={busQuery} onChange={e => setBusQuery(e.target.value)} /><button>Find</button></form><p className="pa-muted">Nearby buses refresh every 10 seconds. Search also shows buses without live GPS.</p>{displayBuses.length ? displayBuses.map(bus => <button key={bus.id} className={`pa-bus ${trackedBus === bus.id ? 'active' : ''}`} onClick={() => { setTrackedBus(bus.id); setBoardingStop(''); if (bus.location) setFocus({ latitude: bus.location.latitude, longitude: bus.location.longitude }); }}><BusFront size={18} /><div><strong>{bus.registration_number ?? bus.id} <span>· {bus.route_id}</span></strong><small>{bus.location?.fresh ? `${bus.location.source==='demo_simulation'?'SIMULATION · ':''}${bus.distance_km == null ? 'Fresh location' : km(bus.distance_km)+' away'} · GPS ${formatTime(bus.location.timestamp)}` : bus.location ? 'Live tracking unavailable · last known location' : 'Live tracking unavailable · no GPS report'}</small><small>{crowdText(bus.crowding)}</small></div></button>) : <p className="pa-muted">No bus with a fresh GPS report is nearby. Start the demo GPS publisher or search a registered bus.</p>}
         {trackedBus && <div className="pa-privacy" style={{display:'block'}}><strong>Tracking {trackedBus}</strong><label className="pa-select">Boarding stop<select aria-label="Boarding stop" value={boardingStop} onChange={e=>setBoardingStop(e.target.value)}><option value="">Next stop in declared direction</option>{stops.filter(stop=>displayBuses.find(bus=>bus.id===trackedBus)?.stop_ids?.includes(stop.id)).map(stop=><option key={stop.id} value={stop.id}>{stop.name}</option>)}</select></label>{arrival?.available ? <><strong>≈ {arrival.estimated_minutes} min to {arrival.stop?.name}</strong><p>Next stop: {arrival.next_stop?.name} · {arrival.demo ? 'DEMO ESTIMATE' : 'ROAD PROFILE ESTIMATE'}</p></> : <p>{arrivalError || arrival?.reason || 'Checking current bus progress…'}</p>}<small>{arrival?.note ?? 'Arrival estimates require fresh GPS and a declared service direction.'}</small></div>}
-        <p className="pa-privacy"><ShieldCheck size={16} /> Passenger view contains only aggregate crowding. Interior CCTV and incident evidence require operator access. Selected route coordinates go to OSRM; place searches go to Nominatim.</p>
+        <p className="pa-privacy"><ShieldCheck size={16} /> Passenger view contains aggregate crowding. {import.meta.env.VITE_PUBLIC_ADMIN === 'true'?'This demonstration has a public admin workspace; do not submit private camera evidence.':'Interior CCTV and incident evidence require operator access.'} Selected route coordinates go to OSRM; place searches go to Nominatim.</p>
       </aside>
     </main>
   </div>;

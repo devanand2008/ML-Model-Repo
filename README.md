@@ -1,5 +1,7 @@
 # TransitOpt AI 2.1 — Camera ML and Transit Operations
 
+The [map and testing guide](documentation/MAP_AND_MODE_TESTING.md) covers live GPS following, traffic colors, minimum/maximum observed traffic places and public module verification.
+
 For free hosting, see the [free Render website and laptop ML guide](documentation/FREE_HOSTING.md). The default Blueprint hosts the website on Render's free plan and connects to full ML on your laptop through Cloudflare. Use `Start-Free-Hosting.bat` and keep the laptop online. A separately tested [paid cloud deployment example](documentation/RENDER_DEPLOYMENT.md) is retained in `render.paid.yaml`.
 
 Version 2.1 centers one shared app on **road traffic ML** and **bus crowd ML**. The public home links passengers, camera operators and admins. `/ml` selects the existing YOLO model and registered laptop/phone camera; `/admin` retains fleet planning. Passenger routes load when both endpoints are set and automatically switch to a better camera-ranked alternative on five-second checks. Selecting a route manually disables automatic switching. The map fits the selected path and offers an external Google Maps directions option. Unobserved roads remain explicitly unknown. A one-minute scene-pressure learner uses continuous live history and becomes active only after beating a purged chronological persistence baseline.

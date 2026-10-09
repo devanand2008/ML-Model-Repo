@@ -22,7 +22,8 @@ export function useResource<T = Data>(path: string) {
     let current = true;
     const saved = cache.get(path);
     if (saved && Date.now() - saved.at < 30000 && !retry) { setData({ path, value: saved.data }); setLoading(false); return; }
-    setLoading(true); setError('');
+    // Keep usable controls visible while refreshing their existing data.
+    setLoading(data === null); setError('');
     let promise = pending.get(path);
     if (!promise) {
       promise = transitRequest<T>(path);

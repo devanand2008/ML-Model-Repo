@@ -1,14 +1,15 @@
 """Verify installed modules and real ML/API flows without activating service plans."""
-import json,ssl,time
+import argparse,json,ssl,time
 from pathlib import Path
 import httpx
 from dotenv import dotenv_values
 ROOT=Path(__file__).resolve().parents[1]
 
-def main():
+def main(base_url='http://127.0.0.1:8000',public=False):
     config=dotenv_values(ROOT/'.env');report={'checks':{},'plans_activated':False,
         'device_validation':'Physical webcam/GPS permissions require checks on the device.'}
-    with httpx.Client(base_url='http://127.0.0.1:8000',auth=(config['ADMIN_USERNAME'],config['ADMIN_PASSWORD']),timeout=180) as client:
+    report['base_url']=base_url;report['public_no_login']=public
+    with httpx.Client(base_url=base_url,auth=None if public else (config['ADMIN_USERNAME'],config['ADMIN_PASSWORD']),timeout=180) as client:
         def call(method,path,**kwargs):
             response=client.request(method,path,**kwargs);response.raise_for_status();return response.json()
         for path in ['/api/health','/api/system/status','/api/models/status','/api/network','/api/cameras',
@@ -61,12 +62,17 @@ def main():
             'Specialized container/condition weights and authorized RTSP feeds are not installed.',
             'Physical camera/GPS and field accuracy were not measured by this API check.']
     address_file=ROOT/'data/phone_tls/address.txt'
-    if address_file.exists():
+    if not public and address_file.exists():
         address=address_file.read_text().strip()
         with httpx.Client(verify=ssl.create_default_context(cafile=str(ROOT/'data/phone_tls/transitopt-phone-ca.crt')),timeout=15,trust_env=False) as phone:
             response=phone.get(f'https://{address}:8443/api/health');response.raise_for_status();report['phone_gateway']='trusted HTTPS passed'
-    path=ROOT/'data/demo_exports/full-app-verification.json';path.parent.mkdir(parents=True,exist_ok=True)
+    path=ROOT/'data/demo_exports'/('public-app-verification.json' if public else 'full-app-verification.json');path.parent.mkdir(parents=True,exist_ok=True)
     path.write_text(json.dumps(report,indent=2),encoding='utf-8')
     print(json.dumps({'passed_api_checks':len(report['checks']),'web_pages':report['web_page_entry_points'],'road_options':report['road_options'],
         'optimizer':report['optimizer']['status'],'report':str(path),'plans_activated':False}),flush=True)
-if __name__=='__main__':main()
+if __name__=='__main__':
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--base-url',default='http://127.0.0.1:8000')
+    parser.add_argument('--public',action='store_true',help='Test the hosted public-admin gateway without credentials')
+    args=parser.parse_args()
+    main(args.base_url.rstrip('/'),args.public)

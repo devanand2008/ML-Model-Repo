@@ -9,7 +9,7 @@ import { ThemeProvider } from '../context/ThemeContext';
 const request = vi.hoisted(() => vi.fn());
 const post = vi.hoisted(() => vi.fn());
 const credentials = vi.hoisted(() => vi.fn());
-const mapEvents = vi.hoisted(() => ({ click:null as null|((event:any)=>void) }));
+const mapEvents = vi.hoisted(() => ({ click:null as null|((event:any)=>void), dragstart:null as null|(()=>void), flyTo:vi.fn(), setView:vi.fn() }));
 vi.mock('../services/transit', () => ({ transitRequest: request, postTransit: post }));
 vi.mock('../services/api', () => ({ setCredentials: credentials }));
 vi.mock('react-leaflet', () => ({
@@ -17,7 +17,7 @@ vi.mock('react-leaflet', () => ({
   TileLayer: () => null, ZoomControl:()=>null, Circle: () => null, CircleMarker: ({ children }: any) => <>{children}</>,
   Marker: ({ children }: any) => <>{children}</>, Polyline: ({children,pathOptions,eventHandlers}:any) => <button data-testid="road-polyline" data-color={pathOptions?.color} data-weight={pathOptions?.weight} onClick={()=>eventHandlers?.click?.()}>{children}</button>,
   Popup: ({ children }: any) => <>{children}</>, Tooltip: ({ children }: any) => <>{children}</>,
-  useMap: () => ({ flyTo: vi.fn(), fitBounds: vi.fn(), getZoom: () => 13 }), useMapEvents: (handlers:any) => {mapEvents.click=handlers.click;},
+  useMap: () => ({ flyTo: mapEvents.flyTo, setView: mapEvents.setView, fitBounds: vi.fn(), getZoom: () => 13 }), useMapEvents: (handlers:any) => {mapEvents.click=handlers.click;mapEvents.dragstart=handlers.dragstart;},
 }));
 afterEach(() => {cleanup();vi.useRealTimers();vi.restoreAllMocks();});
 
@@ -40,6 +40,61 @@ beforeEach(() => {
 });
 
 describe('Passenger and driver mobility flows', () => {
+  it('finds minimum and maximum live traffic places while keeping approximate and recorded pins unknown',async()=>{
+    const base=request.getMockImplementation();
+    const cameras=[['quiet',10,'LOW'],['busy',90,'SEVERE']].map(([id,score,category],index)=>({id,name:`${id} signal`,latitude:11.67+index*.01,longitude:78.14,
+      coordinate_source:'operator_configured',camera_role:'road_traffic',observation:{live:true,fresh:true,score,category,source:'REAL_MODEL_DETECTION',timestamp:new Date().toISOString()}}));
+    cameras.push({...cameras[0],id:'demo',name:'demo pin',coordinate_source:'illustrative_demo_coordinate'});
+    request.mockImplementation(async(path:string,init?:any)=>path==='/api/public/traffic/feed'?{cameras,alerts:[]}:base?.(path,init));
+    render(<ThemeProvider><MemoryRouter><PassengerPage/></MemoryRouter></ThemeProvider>);
+    await waitFor(()=>expect((screen.getByRole('button',{name:'Find minimum observed traffic'}) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button',{name:'Find minimum observed traffic'}));
+    expect(mapEvents.flyTo).toHaveBeenCalledWith([11.67,78.14],13);
+    fireEvent.click(screen.getByRole('button',{name:'Find maximum observed traffic'}));
+    expect(mapEvents.flyTo).toHaveBeenCalledWith([11.68,78.14],13);
+    expect(screen.getByText('1 cameras with unknown current traffic')).toBeTruthy();
+    expect(screen.getAllByText(/Approximate camera location/).length).toBeGreaterThan(0);
+  });
+  it('starts location watching only on request, follows the dot, lets a map drag pause following and clears the watch',async()=>{
+    let update:((position:any)=>void)|undefined;
+    const watch=vi.fn((success:any)=>{update=success;return 71;});
+    const clear=vi.fn();
+    Object.defineProperty(navigator,'geolocation',{configurable:true,value:{watchPosition:watch,clearWatch:clear,getCurrentPosition:vi.fn()}});
+    const view=render(<ThemeProvider><MemoryRouter><PassengerPage/></MemoryRouter></ThemeProvider>);
+    expect(watch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button',{name:'Start live location tracking'}));
+    await waitFor(()=>expect(watch).toHaveBeenCalledOnce());
+    act(()=>update?.({coords:{latitude:11.67,longitude:78.14,accuracy:8}}));
+    expect(mapEvents.setView).toHaveBeenCalledWith([11.67,78.14],15,{animate:true});
+    act(()=>mapEvents.dragstart?.());
+    expect(screen.getByText('Location tracking on · Recenter to follow')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button',{name:'Recenter on my location'}));
+    expect(screen.getByText('Following your location')).toBeTruthy();
+    view.unmount();expect(clear).toHaveBeenCalledWith(71);
+  });
+  it('updates the route after useful GPS movement while ignoring noisy or inaccurate fixes',async()=>{
+    let update:((position:any)=>void)|undefined;
+    let now=Date.now();vi.spyOn(Date,'now').mockImplementation(()=>now);
+    Object.defineProperty(navigator,'geolocation',{configurable:true,value:{watchPosition:(success:any)=>{update=success;return 81;},clearWatch:vi.fn()}});
+    render(<ThemeProvider><MemoryRouter><PassengerPage/></MemoryRouter></ThemeProvider>);
+    act(()=>mapEvents.click?.({latlng:{lat:11.67,lng:78.14}}));
+    act(()=>mapEvents.click?.({latlng:{lat:11.68,lng:78.15}}));
+    await waitFor(()=>expect(request.mock.calls.filter(([path])=>path==='/api/public/navigation/routes')).toHaveLength(1));
+    fireEvent.click(screen.getByRole('button',{name:'Start live location tracking'}));
+    await waitFor(()=>expect(request.mock.calls.filter(([path])=>path==='/api/public/navigation/routes')).toHaveLength(2));
+    now+=31000;
+    act(()=>update?.({coords:{latitude:11.675,longitude:78.145,accuracy:800}}));
+    await act(async()=>{});
+    expect(request.mock.calls.filter(([path])=>path==='/api/public/navigation/routes')).toHaveLength(2);
+    act(()=>update?.({coords:{latitude:11.672,longitude:78.142,accuracy:8}}));
+    await waitFor(()=>expect(request.mock.calls.filter(([path])=>path==='/api/public/navigation/routes')).toHaveLength(3));
+    const calls=request.mock.calls.filter(([path])=>path==='/api/public/navigation/routes');
+    expect(JSON.parse(calls[calls.length-1][1].body).origin).toEqual({latitude:11.672,longitude:78.142});
+    now+=1000;
+    act(()=>update?.({coords:{latitude:11.6721,longitude:78.1421,accuracy:8}}));
+    await act(async()=>{});
+    expect(request.mock.calls.filter(([path])=>path==='/api/public/navigation/routes')).toHaveLength(3);
+  });
   it('loads multiple blue road paths after two map clicks and supports manual line selection',async()=>{
     const base=request.getMockImplementation();
     const paths=[{id:'first',geometry:[[78.14,11.67],[78.15,11.68]],distance_km:2,base_duration_minutes:4},

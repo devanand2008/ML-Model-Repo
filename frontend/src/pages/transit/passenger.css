@@ -412,6 +412,39 @@
   background: var(--bg-surface-alt);
 }
 
+.pa-map-tools { position:absolute; z-index:450; right:14px; top:65px; display:flex; flex-direction:column; gap:7px; }
+.pa-map-tools button { display:flex; align-items:center; gap:8px; min-height:42px; padding:10px 13px; border:1px solid var(--border-card); border-radius:10px; color:var(--text-heading); background:var(--bg-surface); box-shadow:var(--shadow-sm); font-size:12px; }
+.pa-map-tools button[aria-pressed="true"] { border-color:#2563eb; color:#2563eb; }
+.pa-map-tools button:disabled { opacity:.5; cursor:default; }
+.pa-map-legend { position:absolute; z-index:450; left:14px; top:64px; max-width:calc(100% - 180px); display:flex; flex-wrap:wrap; gap:8px; padding:9px 11px; border-radius:10px; background:var(--bg-surface); box-shadow:var(--shadow-sm); font-size:10px; color:var(--text-heading); }
+.pa-map-legend span,.pa-traffic-legend span { display:inline-flex; align-items:center; gap:5px; }
+.pa-map-legend i,.pa-traffic-legend i { width:9px; height:9px; border-radius:50%; }
+.pa-tracking-status { position:absolute; z-index:450; top:104px; left:14px; max-width:calc(100% - 180px); padding:8px 10px; background:var(--bg-surface); color:var(--text-heading); border-radius:8px; font-size:11px; box-shadow:var(--shadow-sm); }
+.pa-camera-detail { position:absolute; z-index:450; left:14px; bottom:125px; max-width:calc(100% - 28px); width:300px; background:var(--bg-surface); border:1px solid var(--border-card); padding:15px 30px 15px 15px; border-radius:12px; box-shadow:var(--shadow-sm); display:flex; flex-direction:column; gap:6px; font-size:13px; }
+.pa-camera-detail>button { position:absolute; right:5px; top:5px; border:0; background:transparent; color:var(--text-heading); font-size:22px; padding:3px 8px; }
+.pa-detail-route { color:#fff; background:#2563eb; border:0; border-radius:7px; padding:9px 10px; margin-top:4px; font-size:11px; }
+.pa-camera-detail small { color:var(--text-secondary); font-size:10px; }
+.pa-scope { display:flex; gap:7px; margin-bottom:12px; }
+.pa-scope button { flex:1; padding:10px 6px; border:1px solid var(--border-card); border-radius:8px; background:var(--bg-input); color:var(--text-heading); font-size:11px; }
+.pa-scope button[aria-pressed="true"] { border-color:#2563eb; color:#2563eb; }
+.pa-traffic-extremes { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:12px 0; }
+.pa-traffic-extremes button { min-width:0; display:flex; flex-direction:column; text-align:left; gap:5px; padding:12px; background:var(--bg-surface-alt); border:1px solid var(--border-card); border-radius:10px; color:var(--text-heading); }
+.pa-traffic-extremes button:first-child { border-top:3px solid #16a34a; }
+.pa-traffic-extremes button:last-child { border-top:3px solid #dc2626; }
+.pa-traffic-extremes span,.pa-traffic-extremes small { font-size:10px; }
+.pa-traffic-extremes strong { font-size:17px; }
+.pa-traffic-extremes small { color:var(--text-secondary); overflow-wrap:anywhere; }
+.pa-traffic-extremes button:disabled { opacity:.65; cursor:default; }
+.pa-traffic-legend { display:flex; flex-wrap:wrap; gap:8px; font-size:10px; margin:14px 0; }
+.pa-traffic-place { width:100%; display:flex; align-items:center; gap:9px; text-align:left; padding:11px 3px; border:0; border-bottom:1px solid var(--border-subtle); background:transparent; color:var(--text-heading); }
+.pa-traffic-place>i { flex-shrink:0; width:11px; height:11px; border-radius:50%; }
+.pa-traffic-place>div { display:flex; flex-direction:column; gap:3px; flex:1; }
+.pa-traffic-place strong { font-size:12px; }
+.pa-traffic-place small { font-size:10px; color:var(--text-secondary); }
+.pa-traffic-panel details { font-size:11px; margin:12px 0; color:var(--text-secondary); }
+.pa-traffic-panel summary { cursor:pointer; }
+.pa-traffic-panel .pa-select>span { display:flex; gap:6px; align-items:center; }
+
 /* Subtle map tile treatment in dark theme */
 [data-theme="dark"] .pa-map .leaflet-tile-pane {
   filter: brightness(0.75) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.65);
