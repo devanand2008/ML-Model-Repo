@@ -1,0 +1,36 @@
+# Full app image: same-origin React + FastAPI + CPU ML, with models built in.
+FROM node:22-bookworm-slim AS frontend
+WORKDIR /web
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
+FROM python:3.12-slim
+WORKDIR /app
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
+    OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 \
+    YOLO_CONFIG_DIR=/tmp/ultralytics HF_HUB_DISABLE_TELEMETRY=1
+RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+COPY backend/requirements.txt /app/requirements.txt
+# Install CPU wheels first to avoid downloading the Linux CUDA dependency stack.
+RUN pip install --no-cache-dir torch==2.9.0 torchvision==0.24.0 --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir -r requirements.txt
+COPY backend /app/backend
+COPY scripts /app/scripts
+COPY training /app/training
+COPY documentation /app/documentation
+COPY --from=frontend /web/dist /app/frontend/dist
+# Render disks are unavailable during builds. Keep immutable seed assets outside
+# the disk mount and copy missing files into persistent storage on startup.
+RUN python scripts/prepare_cloud_models.py --seed-dir /app/cloud-seed
+RUN useradd --create-home --uid 10001 visionx \
+    && mkdir -p /app/storage \
+    && chown -R visionx:visionx /app /home/visionx
+ENV APP_ENV=production APP_HOST=0.0.0.0 AUTH_ENABLED=true \
+    PERSISTENT_STORAGE=/app/storage CLOUD_SEED_DIR=/app/cloud-seed PORT=10000
+EXPOSE 10000
+# The startup script fixes a newly mounted disk's ownership and drops privileges
+# before importing the app or starting Uvicorn.
+CMD ["python", "scripts/start_cloud.py"]

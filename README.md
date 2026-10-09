@@ -1,5 +1,7 @@
 # TransitOpt AI 2.1 — Camera ML and Transit Operations
 
+For cloud hosting of the web app and ML models, see the [Render deployment guide](documentation/RENDER_DEPLOYMENT.md). The repository includes a Docker Blueprint with persistent storage and stock model preparation; deployment requires a Render account and approval of the selected paid compute/storage price.
+
 Version 2.1 centers one shared app on **road traffic ML** and **bus crowd ML**. The public home links passengers, camera operators and admins. `/ml` selects the existing YOLO model and registered laptop/phone camera; `/admin` retains fleet planning. Passenger routes load when both endpoints are set and automatically switch to a better camera-ranked alternative on five-second checks. Selecting a route manually disables automatic switching. The map fits the selected path and offers an external Google Maps directions option. Unobserved roads remain explicitly unknown. A one-minute scene-pressure learner uses continuous live history and becomes active only after beating a purged chronological persistence baseline.
 
 Laptop: `Run-TransitOpt.bat start`. Phone on the same Wi-Fi: `Run-TransitOpt-Phone.bat start`, then manually trust the generated public CA certificate on your phone and open the printed HTTPS address. Weak demo admin credentials are replaced with a strong random password in `.env` before LAN access starts. See the [camera ML and phone setup guide](documentation/CAMERA_ML_GUIDE.md). Real traffic signal feeds and verified geographic locations must be supplied by the operator.

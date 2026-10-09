@@ -52,6 +52,8 @@ outputs/**
 reports/**
 models/**
 weights/**
+storage/
+.tools/
 data/forecasting/
 data/synthetic/
 data/demo_exports/
