@@ -18,6 +18,21 @@ TOOLS = ROOT / '.tools'
 CONFIG = TOOLS / 'free-hosting.json'
 STOP = TOOLS / 'free-hosting.stop'
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+TUNNEL_READY_URL = 'http://127.0.0.1:8789/ready'
+
+
+def tunnel_ready():
+    """A live process is not proof that Cloudflare has an edge connection."""
+    try:
+        with urllib.request.urlopen(TUNNEL_READY_URL, timeout=2) as reply:
+            return reply.status == 200
+    except OSError:
+        return False
+
+
+def tunnel_arguments(binary):
+    return [str(binary), 'tunnel', '--url', 'http://127.0.0.1:8788',
+            '--protocol', 'auto', '--metrics', '127.0.0.1:8789', '--no-autoupdate']
 
 
 def request(url, data=None, method=None, headers=None, timeout=30):
@@ -25,8 +40,18 @@ def request(url, data=None, method=None, headers=None, timeout=30):
     if data is not None:
         data = json.dumps(data).encode()
         supplied['Content-Type'] = 'application/json'
-    with urllib.request.urlopen(urllib.request.Request(url, data=data, method=method, headers=supplied), timeout=timeout) as reply:
-        return json.load(reply)
+    message = urllib.request.Request(url, data=data, method=method, headers=supplied)
+    attempts = 3 if message.get_method() in {'GET', 'PUT'} else 1
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(message, timeout=timeout) as reply:
+                return json.load(reply)
+        except urllib.error.HTTPError:
+            raise
+        except OSError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(2)
 
 
 def read_config():
@@ -126,8 +151,7 @@ def supervise():
                 time.sleep(1)
         while not STOP.exists():
             with (logs / 'free-tunnel.log').open('w') as tunnel_log:
-                tunnel = subprocess.Popen([str(binary), 'tunnel', '--url', 'http://127.0.0.1:8788',
-                    '--protocol', 'http2', '--no-autoupdate'], cwd=ROOT,
+                tunnel = subprocess.Popen(tunnel_arguments(binary), cwd=ROOT,
                     stdout=tunnel_log, stderr=subprocess.STDOUT, creationflags=NO_WINDOW)
             url = None
             for _ in range(90):
@@ -136,19 +160,41 @@ def supervise():
                 match = re.search(r'https://[a-z0-9-]+\.trycloudflare\.com', (logs / 'free-tunnel.log').read_text(errors='replace'))
                 if match:
                     url = match.group(0)
-                    break
+                    if tunnel_ready():
+                        break
                 time.sleep(1)
-            if not url:
-                raise RuntimeError('Cloudflare tunnel failed. See logs/free-tunnel.log.')
+            if not url or not tunnel_ready():
+                if tunnel.poll() is None:
+                    tunnel.terminate()
+                    tunnel.wait(timeout=15)
+                tunnel = None
+                if STOP.exists():
+                    break
+                print('Tunnel is not connected; retrying automatically in 15 seconds.', flush=True)
+                time.sleep(15)
+                continue
             config = read_config()
             config['tunnel_url'] = url
             save_config(config)
             print('Secure laptop connection ready. Website:', config.get('public_url', 'deployment pending'), flush=True)
             connected_service = None
             last_attempt = 0
+            last_ready = time.monotonic()
+            last_ml_check = time.monotonic()
             while not STOP.exists() and tunnel.poll() is None:
                 if bridge.poll() is not None:
                     raise RuntimeError('Laptop bridge stopped. Run the launcher again.')
+                if tunnel_ready():
+                    last_ready = time.monotonic()
+                elif time.monotonic() - last_ready >= 120:
+                    print('Tunnel lost its edge connection; rebuilding the connection.', flush=True)
+                    break
+                if time.monotonic() - last_ml_check >= 60:
+                    last_ml_check = time.monotonic()
+                    try:
+                        check_local_ml()
+                    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+                        print('Local ML needs attention; see the server logs.', flush=True)
                 config = read_config()
                 service_id = config.get('service_id')
                 if service_id and connected_service != service_id and time.monotonic() - last_attempt > 60:
@@ -206,6 +252,12 @@ if __name__ == '__main__':
                 print('Laptop bridge:', request('http://127.0.0.1:8788/gateway/health', timeout=3)['status'])
             except OSError:
                 print('Laptop bridge: offline')
+            print('Cloudflare edge:', 'connected' if tunnel_ready() else 'disconnected')
+            try:
+                public = request(config['public_url'] + '/gateway/status', timeout=15)
+                print('Deployed ML:', 'connected' if public.get('ml_online') else 'disconnected')
+            except (OSError, ValueError, KeyError):
+                print('Deployed ML: connection check unavailable')
         else:
             print('Free hosting is not configured yet.')
     else:

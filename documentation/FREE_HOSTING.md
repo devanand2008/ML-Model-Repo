@@ -11,7 +11,9 @@ Verified October 9, 2026: the service is on the `free` plan; its Linux gateway p
 1. On the configured laptop, double-click **Start-Free-Hosting.bat**. Leave that window open and keep the laptop awake and connected to the internet.
 2. Open the Render website printed by the launcher. **The hosted admin dashboard is public and has no ID/password sign-in. Anyone with the link can use admin controls.** The laptop app retains its existing sign-in. Browser camera and GPS still require your permission.
 3. If the laptop restarted, the launcher creates a new Cloudflare address and reconnects the free Render service. Wait for its deployment to finish, then refresh the website. Reconnection uses the official Render CLI login stored on the laptop; run `render login` again if it expires.
-4. Run `Start-Free-Hosting.bat status` to check the laptop bridge. Run `Start-Free-Hosting.bat stop` to close the public tunnel. The local ML app stays available.
+4. Run `Start-Free-Hosting.bat status` to check the laptop bridge, Cloudflare edge and deployed ML connection. Run `Start-Free-Hosting.bat stop` to close the public tunnel. The local ML app stays available.
+
+The launcher now selects Cloudflare's transport automatically rather than forcing HTTP/2. It waits for an actual edge connection before updating Render, recreates a tunnel after two minutes without an edge connection, retries startup failures, and checks the local ML server every minute. Connection diagnostics listen only on `127.0.0.1:8789`. The hosted banner retries failed checks every ten seconds, checks again when you return to the tab, and offers **Retry connection**; a page refresh is no longer needed to update the banner.
 
 The website shows whether laptop ML is connected. Its UI remains available when the laptop is offline; analysis and live route intelligence require the laptop. Model weights and application records stay in their existing local folders, so back them up there.
 
