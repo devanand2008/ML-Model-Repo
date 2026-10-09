@@ -1,38 +1,19 @@
-# Full ML deployment requires paid compute and a persistent disk.
-# Review the displayed price in Render before creating this service.
+# Free website; full ML and persistent data stay on the laptop.
 services:
   - type: web
-    name: transitopt-ml
+    name: transitopt-free
     runtime: docker
     repo: https://github.com/devanand2008/ML-Model-Repo
     branch: main
     region: singapore
-    plan: 2c-4g
-    dockerfilePath: ./Dockerfile.render
+    plan: free
+    dockerfilePath: ./Dockerfile.gateway
     dockerContext: .
-    healthCheckPath: /api/health
+    healthCheckPath: /gateway/health
     numInstances: 1
     autoDeployTrigger: commit
-    disk:
-      name: transitopt-storage
-      mountPath: /app/storage
-      sizeGB: 5
     envVars:
-      - key: APP_ENV
-        value: production
-      - key: AUTH_ENABLED
-        value: "true"
-      - key: ADMIN_USERNAME
-        value: admin
-      - key: ADMIN_PASSWORD
+      - key: TUNNEL_URL
         sync: false
-      - key: SECRET_KEY
-        generateValue: true
-      - key: PERSISTENT_STORAGE
-        value: /app/storage
-      - key: CLOUD_SEED_DIR
-        value: /app/cloud-seed
-      - key: MAX_FILE_SIZE_MB
-        value: "100"
-      - key: LIVE_MAX_FPS
-        value: "15"
+      - key: BRIDGE_TOKEN
+        sync: false

@@ -4,6 +4,7 @@ Keep these BAT files in the `visionx-ai` project folder; they use its relative `
 
 | File | Action |
 |---|---|
+| `Start-Free-Hosting.bat` | Starts full laptop ML and its secure connection to the free Render website. Keep the laptop and launcher running. See [free hosting](FREE_HOSTING.md). |
 | `Start-TransitOpt-All.bat` | Checks Python and Node, installs missing project dependencies, builds the frontend, starts the existing shared server, and opens the full web app. |
 | `Run-On-Web.bat` | Alias for the complete web-app launcher. |
 | `Record-Full-Demo.bat` | Starts the app and opens `/record-demo`. |

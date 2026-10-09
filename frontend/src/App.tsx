@@ -21,6 +21,7 @@ import ProjectPage from "./pages/transit/ProjectPage";
 import { DemoRecorderProvider } from './components/DemoRecorder';
 import { ThemeProvider } from './context/ThemeContext';
 import ModuleErrorBoundary from './components/ModuleErrorBoundary';
+import HostingStatus from './components/HostingStatus';
 
 const PassengerPage = lazy(() => import("./pages/transit/PassengerPage"));
 const DriverPage = lazy(() => import("./pages/transit/DriverPage"));
@@ -38,7 +39,7 @@ const RecordedSamplePage = lazy(() => import('./pages/transit/RecordDemoPage').t
 
 export default function App() {
   return (
-    <ThemeProvider><DemoRecorderProvider><ModuleErrorBoundary><Suspense fallback={<div role="status" style={{ padding: 32 }}>Loading TransitOpt…</div>}><Routes>
+    <ThemeProvider><HostingStatus /><DemoRecorderProvider><ModuleErrorBoundary><Suspense fallback={<div role="status" style={{ padding: 32 }}>Loading TransitOpt…</div>}><Routes>
       <Route index element={<AppHomePage />} />
       <Route path="connect" element={<ConnectDevicePage />} />
       <Route path="passenger" element={<PassengerPage />} />

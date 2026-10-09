@@ -1,10 +1,10 @@
 # Render deployment for the full ML app
 
-This repository includes `render.yaml` and `Dockerfile.render` for one public HTTPS service serving the React app, FastAPI, browser-camera WebSockets, stock YOLO26 detection/pose, XGBoost demand forecasts, OR-Tools and the local FLAN-T5 route assistant. The app starts a new cloud database; the laptop's private database, uploads, recordings and `.env` are not copied to GitHub or the image.
+This paid example uses `render.paid.yaml` and `Dockerfile.render` for one public HTTPS service serving the React app, FastAPI, browser-camera WebSockets, stock YOLO26 detection/pose, XGBoost demand forecasts, OR-Tools and the local FLAN-T5 route assistant. The default `render.yaml` now uses [free hosting with laptop ML](FREE_HOSTING.md). The paid example starts a new cloud database; the laptop's private database, uploads, recordings and `.env` are not copied to GitHub or the image.
 
 ## Deploy
 
-Open [Deploy to Render](https://dashboard.render.com/select-repo?type=blueprint&repo=https%3A%2F%2Fgithub.com%2Fdevanand2008%2FML-Model-Repo). Sign into Render, authorize the GitHub repository if prompted, and review the Blueprint.
+If choosing paid hosting later, create a Blueprint in Render using `render.paid.yaml` and review its displayed price. The repository's default Blueprint deploys the free gateway instead.
 
 The prepared configuration uses **2 CPU / 4 GB RAM** (`2c-4g`) in Singapore and a **5 GB persistent disk**. This is a proposed starting size, not a measured concurrency guarantee. Check Render's displayed compute/storage price before creating it. The full in-process PyTorch/RAG application is not sized for the free 512 MB plan. Hosting charges require your budget approval.
 
