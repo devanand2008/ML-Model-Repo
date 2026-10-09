@@ -28,6 +28,8 @@ The route assistant runs the local pinned FLAN-T5 model. It explains retrieved r
 
 ## Local checks
 
+Validated on October 9, 2026: the clean Linux Docker build for app commit `08583fd` completed, the Blueprint passed Render's published JSON schema, and 13 cloud/startup/RAG regression tests passed. A container limited to 2 CPU cores and 4 GB RAM passed production health, frontend serving, admin authentication, 30/60/120-minute demand forecasts, an `OPTIMAL` allocation, local neural RAG generation and actual YOLO image inference. A restart preserved disk contents and the app process ran with UID 10001. Both general and human camera WebSocket modes detected objects from a recorded validation frame using the HTTPS proxy/origin settings. These are local container checks; a live Render deployment and physical camera/GPS permission checks still require account authorization and device testing.
+
 ```powershell
 .\.venv\Scripts\python.exe -m pytest backend/tests/test_cloud_startup.py -q
 docker build -f Dockerfile.render -t transitopt-render .
